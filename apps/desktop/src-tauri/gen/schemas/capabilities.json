@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capability set for the Banshee desktop application.","local":true,"windows":["main","hud"],"permissions":["core:default","global-shortcut:allow-is-registered","global-shortcut:allow-register","global-shortcut:allow-unregister"]}}

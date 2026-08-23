@@ -1,0 +1,35 @@
+[workspace]
+members = [
+  "apps/desktop/src-tauri",
+  "crates/audio",
+  "crates/vad",
+  "crates/stt",
+  "crates/transformer",
+  "crates/context",
+  "crates/dictionary",
+  "crates/injector",
+  "crates/history",
+  "crates/models",
+  "crates/platform",
+  "crates/storage",
+  "crates/core",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "0.1.0"
+authors = ["Banshee Contributors"]
+
+[workspace.dependencies]
+anyhow = "1"
+arboard = "3"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tracing = "0.1"

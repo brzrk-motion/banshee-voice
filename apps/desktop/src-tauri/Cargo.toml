@@ -1,0 +1,30 @@
+[package]
+name = "banshee-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+banshee-audio = { path = "../../../crates/audio" }
+banshee-core = { path = "../../../crates/core" }
+banshee-injector = { path = "../../../crates/injector" }
+banshee-platform = { path = "../../../crates/platform" }
+banshee-stt = { path = "../../../crates/stt" }
+banshee-storage = { path = "../../../crates/storage" }
+banshee-transformer = { path = "../../../crates/transformer" }
+banshee-vad = { path = "../../../crates/vad" }
+serde.workspace = true
+tauri.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-global-shortcut = "2"
+
+[features]
+default = []

@@ -1,0 +1,142 @@
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    launch_at_login INTEGER NOT NULL DEFAULT 0,
+    start_minimized INTEGER NOT NULL DEFAULT 0,
+    minimize_to_tray INTEGER NOT NULL DEFAULT 1,
+    show_hud INTEGER NOT NULL DEFAULT 1,
+    play_start_sound INTEGER NOT NULL DEFAULT 0,
+    play_completion_sound INTEGER NOT NULL DEFAULT 0,
+    microphone_device_id TEXT,
+    vad_sensitivity REAL NOT NULL DEFAULT 0.5,
+    push_to_talk_shortcut TEXT NOT NULL,
+    toggle_recording_shortcut TEXT NOT NULL,
+    cancel_shortcut TEXT NOT NULL,
+    repaste_previous_shortcut TEXT NOT NULL,
+    speech_model_default_id TEXT,
+    cleanup_model_default_id TEXT,
+    acceleration_preference TEXT NOT NULL,
+    history_enabled INTEGER NOT NULL DEFAULT 1,
+    audio_retention_policy TEXT NOT NULL,
+    auto_paste_enabled INTEGER NOT NULL DEFAULT 1,
+    preserve_clipboard INTEGER NOT NULL DEFAULT 1,
+    paste_delay_ms INTEGER NOT NULL DEFAULT 40,
+    cleanup_llm_enabled INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    slug TEXT NOT NULL UNIQUE,
+    built_in INTEGER NOT NULL DEFAULT 0,
+    description TEXT NOT NULL,
+    live_partial_transcript INTEGER NOT NULL DEFAULT 0,
+    remove_fillers INTEGER NOT NULL DEFAULT 1,
+    resolve_corrections INTEGER NOT NULL DEFAULT 1,
+    apply_dictionary INTEGER NOT NULL DEFAULT 1,
+    apply_repository_context INTEGER NOT NULL DEFAULT 0,
+    enable_cleanup_llm INTEGER NOT NULL DEFAULT 0,
+    preserve_commands INTEGER NOT NULL DEFAULT 1,
+    preserve_punctuation INTEGER NOT NULL DEFAULT 0,
+    prefer_concise_output INTEGER NOT NULL DEFAULT 0,
+    file_reference_style TEXT NOT NULL DEFAULT 'none',
+    trailing_whitespace_policy TEXT NOT NULL DEFAULT 'trim',
+    cleanup_prompt_template TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS models (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    engine TEXT NOT NULL,
+    capability TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    quantization TEXT,
+    language_scope TEXT,
+    architecture TEXT,
+    recommended_usage TEXT NOT NULL DEFAULT 'balanced',
+    default_selected INTEGER NOT NULL DEFAULT 0,
+    installed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_verified_at TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    root_path TEXT NOT NULL UNIQUE,
+    detected_vcs TEXT NOT NULL DEFAULT 'none',
+    default_profile_id TEXT,
+    index_status TEXT NOT NULL DEFAULT 'never_indexed',
+    last_indexed_at TEXT,
+    last_index_duration_ms INTEGER,
+    file_count INTEGER NOT NULL DEFAULT 0,
+    symbol_count INTEGER NOT NULL DEFAULT 0,
+    vocabulary_term_count INTEGER NOT NULL DEFAULT 0,
+    branch_name TEXT,
+    exclude_patterns_json TEXT NOT NULL DEFAULT '[]',
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(default_profile_id) REFERENCES profiles(id)
+);
+
+CREATE TABLE IF NOT EXISTS dictionary_entries (
+    id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL,
+    project_id TEXT,
+    spoken_form TEXT NOT NULL,
+    output_form TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 0,
+    match_mode TEXT NOT NULL DEFAULT 'exact_phrase',
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+
+CREATE TABLE IF NOT EXISTS transcriptions (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    audio_retained INTEGER NOT NULL DEFAULT 0,
+    audio_path TEXT,
+    raw_text TEXT,
+    deterministic_text TEXT,
+    final_text TEXT,
+    word_count INTEGER NOT NULL DEFAULT 0,
+    character_count INTEGER NOT NULL DEFAULT 0,
+    source_application TEXT,
+    window_title TEXT,
+    session_type TEXT,
+    project_id TEXT,
+    profile_id TEXT NOT NULL,
+    speech_model_id TEXT,
+    cleanup_model_id TEXT,
+    stt_backend TEXT NOT NULL,
+    cleanup_backend TEXT,
+    acceleration_requested TEXT NOT NULL,
+    acceleration_actual TEXT NOT NULL,
+    stt_latency_ms INTEGER,
+    cleanup_latency_ms INTEGER,
+    total_latency_ms INTEGER,
+    output_method TEXT NOT NULL,
+    output_result TEXT NOT NULL,
+    error_code TEXT,
+    error_message TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id),
+    FOREIGN KEY(profile_id) REFERENCES profiles(id),
+    FOREIGN KEY(speech_model_id) REFERENCES models(id),
+    FOREIGN KEY(cleanup_model_id) REFERENCES models(id)
+);

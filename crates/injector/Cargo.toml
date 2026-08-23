@@ -1,0 +1,13 @@
+[package]
+name = "banshee-injector"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+arboard.workspace = true
+banshee-core = { path = "../core" }
+serde.workspace = true
+thiserror.workspace = true
