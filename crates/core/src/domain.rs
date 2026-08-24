@@ -284,6 +284,13 @@ pub struct HudStateChanged {
     pub message: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryEntry {
+    pub spoken_form: String,
+    pub output_form: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioLevelChanged {
@@ -376,6 +383,7 @@ pub struct TranscriptionRequest {
     pub acceleration_preference: AccelerationPreference,
     pub latency_profile: String,
     pub selected_model_name: Option<String>,
+    pub initial_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -391,6 +399,9 @@ pub struct TranscriptionOutput {
 pub struct CleanupRequest {
     pub raw_text: String,
     pub profile: ProfileSummary,
+    pub vocabulary: Vec<DictionaryEntry>,
+    pub llm_enabled: bool,
+    pub active_application: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -398,6 +409,9 @@ pub struct CleanupRequest {
 pub struct CleanupOutput {
     pub deterministic_text: String,
     pub final_text: String,
+    pub backend: String,
+    pub latency_ms: u64,
+    pub fallback_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -435,6 +449,10 @@ pub struct PipelineRunResult {
     pub deterministic_text: String,
     pub final_text: String,
     pub stt_backend: String,
+    pub cleanup_backend: String,
+    pub stt_latency_ms: u64,
+    pub cleanup_latency_ms: u64,
+    pub cleanup_fallback_reason: Option<String>,
     pub peak_level: f32,
     pub status: PipelineRunStatus,
     pub output: OutputResponse,
@@ -506,6 +524,12 @@ pub trait CleanupEngine: Send + Sync {
 pub trait OutputBackend: Send + Sync {
     fn capture_target(&self) -> anyhow::Result<Option<OutputTarget>>;
     fn insert_text(&self, request: OutputRequest) -> anyhow::Result<OutputResponse>;
+}
+
+pub trait DictionaryStore: Send + Sync {
+    fn list_global(&self) -> anyhow::Result<Vec<DictionaryEntry>>;
+    fn replace_global(&self, entries: Vec<DictionaryEntry>)
+    -> anyhow::Result<Vec<DictionaryEntry>>;
 }
 
 pub trait ActiveWindowProvider: Send + Sync {
