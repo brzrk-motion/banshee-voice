@@ -72,6 +72,7 @@ fn main() {
             commands::dictionary::dictionary_entries_get,
             commands::dictionary::dictionary_entries_replace,
             commands::models::models_status_get,
+            commands::models::model_status_get,
             commands::models::model_download_retry,
             commands::recording::recording_start_manual,
             commands::recording::recording_stop_manual,

@@ -8,6 +8,26 @@ import { TranscribePage } from "@/features/transcribe/TranscribePage";
 import { errorMessage, run } from "@/lib/tauri";
 import type { AudioInputDevice, DictionaryEntry, ModelStatus, ModelsStatus, PageId, RecordingResult, RecordingSnapshot, RecordingStateChanged, Settings } from "@/lib/types";
 
+const missingCleanupStatus: ModelStatus = {
+  capability: "cleanup",
+  state: "missing",
+  modelName: "Qwen2.5-0.5B-Instruct-Q4_K_M",
+  downloadedBytes: 0,
+};
+
+function normalizeModelsStatus(status: ModelsStatus | ModelStatus): ModelsStatus {
+  if ("speech" in status) return status;
+  return { speech: status, cleanup: missingCleanupStatus };
+}
+
+async function loadModelsStatus() {
+  try {
+    return normalizeModelsStatus(await run<ModelsStatus | ModelStatus>("models_status_get"));
+  } catch {
+    return normalizeModelsStatus(await run<ModelsStatus | ModelStatus>("model_status_get"));
+  }
+}
+
 export default function App() {
   const [page, setPage] = useState<PageId>("transcribe");
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -18,25 +38,23 @@ export default function App() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [modelsStatus, setModelsStatus] = useState<ModelsStatus>({
     speech: { capability: "speech", state: "missing", modelName: "base.en", downloadedBytes: 0 },
-    cleanup: { capability: "cleanup", state: "missing", modelName: "Qwen2.5-0.5B-Instruct-Q4_K_M", downloadedBytes: 0 },
+    cleanup: missingCleanupStatus,
   });
   const [vocabulary, setVocabulary] = useState<DictionaryEntry[]>([]);
 
   useEffect(() => {
-    void Promise.all([
-      run<Settings>("settings_get"),
-      run<AudioInputDevice[]>("audio_list_input_devices"),
-      run<ModelsStatus>("models_status_get"),
-      run<DictionaryEntry[]>("dictionary_entries_get"),
-      run<RecordingSnapshot>("recording_snapshot_get"),
-    ]).then(([loadedSettings, loadedDevices, loadedModelsStatus, loadedVocabulary, snapshot]) => {
-      setSettings(loadedSettings);
-      setDevices(loadedDevices);
-      setModelsStatus(loadedModelsStatus);
-      setVocabulary(loadedVocabulary);
+    const reportLoadError = (area: string) => (error: unknown) => {
+      toast.error(`Banshee could not load ${area}`, { description: errorMessage(error) });
+    };
+
+    void run<Settings>("settings_get").then(setSettings).catch(reportLoadError("settings"));
+    void run<AudioInputDevice[]>("audio_list_input_devices").then(setDevices).catch(reportLoadError("audio devices"));
+    void loadModelsStatus().then(setModelsStatus).catch(reportLoadError("model status"));
+    void run<DictionaryEntry[]>("dictionary_entries_get").then(setVocabulary).catch(reportLoadError("custom vocabulary"));
+    void run<RecordingSnapshot>("recording_snapshot_get").then((snapshot) => {
       setRecordingState(snapshot.state);
       if (snapshot.lastTranscript) setScratchText(snapshot.lastTranscript);
-    }).catch((error) => toast.error("Banshee could not load", { description: errorMessage(error) }));
+    }).catch(reportLoadError("recording state"));
 
     const disposers: Array<() => void> = [];
     listen<RecordingStateChanged>("recording_state_changed", (event) => setRecordingState(event.payload.state))
