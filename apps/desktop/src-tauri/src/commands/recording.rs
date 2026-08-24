@@ -3,7 +3,7 @@ use crate::{
         ManagedAppState, RecordingTrigger,
         ipc::{AppErrorDto, RecordingResultDto},
     },
-    events::hud::{emit_hud_state, emit_recording_state},
+    events::hud::emit_recording_state,
 };
 use banshee_audio::AudioError;
 use banshee_core::{
@@ -21,7 +21,10 @@ fn map_pipeline_error(error: anyhow::Error) -> AppError {
     if let Some(audio_error) = error.downcast_ref::<AudioError>() {
         return AppError {
             code: match audio_error {
-                AudioError::MicrophoneUnavailable => AppErrorCode::MicrophoneUnavailable,
+                AudioError::MicrophoneUnavailable | AudioError::StreamFailed(_) => {
+                    AppErrorCode::MicrophoneUnavailable
+                }
+                AudioError::PermissionDenied => AppErrorCode::MicrophonePermissionDenied,
             },
             message: audio_error.to_string(),
             recoverable: true,
@@ -69,6 +72,15 @@ pub fn start_recording_with_trigger(
     state: &ManagedAppState,
     trigger: RecordingTrigger,
 ) -> Result<(), AppErrorDto> {
+    if !state.model_ready() {
+        return Err(AppError {
+            code: AppErrorCode::ModelMissing,
+            message: "The speech model is still downloading or loading.".to_string(),
+            recoverable: true,
+            fallback_used: Some(FallbackUsed::None),
+        }
+        .into());
+    }
     if state
         .recording()
         .lock()
@@ -111,17 +123,6 @@ pub fn start_recording_with_trigger(
         },
     )
     .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
-    emit_hud_state(
-        app,
-        HudStateChanged {
-            state: HudState::Listening,
-            message: Some("Listening for dictation".to_string()),
-            level: Some(0.0),
-            live_transcript: None,
-        },
-    )
-    .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
-
     Ok(())
 }
 
@@ -146,16 +147,6 @@ pub fn stop_recording(
         },
     )
     .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
-    emit_hud_state(
-        app,
-        HudStateChanged {
-            state: HudState::Processing,
-            message: Some("Processing local transcript".to_string()),
-            level: None,
-            live_transcript: None,
-        },
-    )
-    .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
     emit_recording_state(
         app,
         RecordingStateChanged {
@@ -165,17 +156,13 @@ pub fn stop_recording(
     )
     .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
 
-    let (session, trigger) = {
+    let (session, _trigger) = {
         let mut recording = state.recording().lock().expect("recording mutex poisoned");
         recording.take_session()
     }
     .ok_or_else(|| AppErrorDto::unknown("no active recording session"))?;
 
-    match state
-        .services()
-        .recording_pipeline()
-        .stop(&session, trigger != RecordingTrigger::Manual)
-    {
+    match state.services().recording_pipeline().stop(&session, false) {
         Ok(result) => {
             let history_enabled = state
                 .services()
@@ -222,33 +209,13 @@ pub fn stop_recording(
             emit_recording_state(
                 app,
                 RecordingStateChanged {
-                    state: if trigger == RecordingTrigger::Manual {
-                        RecordingState::Idle
-                    } else {
-                        RecordingState::Inserting
-                    },
-                    transcription_id: Some(result.session_id.clone()),
-                },
-            )
-            .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
-            emit_recording_state(
-                app,
-                RecordingStateChanged {
                     state: RecordingState::Idle,
                     transcription_id: Some(result.session_id.clone()),
                 },
             )
             .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
-            emit_hud_state(
-                app,
-                HudStateChanged {
-                    state: HudState::Complete,
-                    message: Some(result.output.message),
-                    level: Some(result.peak_level),
-                    live_transcript: Some(result.final_text),
-                },
-            )
-            .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
+            app.emit("transcription_completed", dto.clone())
+                .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
 
             Ok(dto)
         }
@@ -270,16 +237,6 @@ pub fn stop_recording(
                 RecordingStateChanged {
                     state: RecordingState::Error,
                     transcription_id: None,
-                },
-            )
-            .map_err(|emit_error| AppErrorDto::unknown(emit_error.to_string()))?;
-            emit_hud_state(
-                app,
-                HudStateChanged {
-                    state: HudState::Error,
-                    message: Some(app_error.message.clone()),
-                    level: None,
-                    live_transcript: None,
                 },
             )
             .map_err(|emit_error| AppErrorDto::unknown(emit_error.to_string()))?;
@@ -324,17 +281,6 @@ pub fn cancel_recording(
         },
     )
     .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
-    emit_hud_state(
-        app,
-        HudStateChanged {
-            state: HudState::Hidden,
-            message: None,
-            level: None,
-            live_transcript: None,
-        },
-    )
-    .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
-
     Ok(())
 }
 
@@ -347,11 +293,14 @@ pub fn recording_start_manual(
 }
 
 #[tauri::command]
-pub fn recording_stop_manual(
+pub async fn recording_stop_manual(
     app: tauri::AppHandle,
     state: tauri::State<'_, ManagedAppState>,
 ) -> Result<RecordingResultDto, AppErrorDto> {
-    stop_recording(&app, &state)
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || stop_recording(&app, &state))
+        .await
+        .map_err(|error| AppErrorDto::unknown(error.to_string()))?
 }
 
 #[tauri::command]
@@ -360,4 +309,16 @@ pub fn recording_cancel(
     state: tauri::State<'_, ManagedAppState>,
 ) -> Result<(), AppErrorDto> {
     cancel_recording(&app, &state)
+}
+
+#[tauri::command]
+pub fn recording_snapshot_get(
+    state: tauri::State<'_, ManagedAppState>,
+) -> banshee_core::domain::RecordingSnapshot {
+    state
+        .recording()
+        .lock()
+        .expect("recording mutex poisoned")
+        .snapshot
+        .clone()
 }

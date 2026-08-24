@@ -25,10 +25,11 @@ fn main() {
             )?;
 
             let state = app_state::ManagedAppState::initialize().map_err(setup_error)?;
-            windows::register(app.handle())?;
             tray::initialize(app.handle())?;
             app.manage(hotkeys::HotkeyBindings::default());
             app.manage(state);
+            app.state::<app_state::ManagedAppState>()
+                .ensure_model(app.handle().clone());
             let settings = app
                 .state::<app_state::ManagedAppState>()
                 .services()
@@ -43,9 +44,12 @@ fn main() {
             commands::settings::settings_get,
             commands::settings::settings_update,
             commands::settings::audio_list_input_devices,
+            commands::models::model_status_get,
+            commands::models::model_download_retry,
             commands::recording::recording_start_manual,
             commands::recording::recording_stop_manual,
             commands::recording::recording_cancel,
+            commands::recording::recording_snapshot_get,
             commands::history::history_list,
             commands::history::clipboard_write_text,
         ])

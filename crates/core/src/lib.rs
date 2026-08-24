@@ -62,7 +62,7 @@ impl AppServices {
             words_today: 0,
             speech_minutes_today: 0,
             microphone_name,
-            speech_model_name: Some("Whisper Preview".to_string()),
+            speech_model_name: Some("Whisper tiny.en Q5_1".to_string()),
             cleanup_model_name: None,
             active_profile_name: Some(profile.name),
             push_to_talk_shortcut: settings.push_to_talk_shortcut,

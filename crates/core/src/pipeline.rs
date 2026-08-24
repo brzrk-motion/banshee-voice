@@ -78,8 +78,8 @@ impl RecordingPipeline {
             audio: vad_result.trimmed_audio.clone(),
             language: "en".to_string(),
             acceleration_preference: settings.acceleration_preference,
-            latency_profile: "balanced".to_string(),
-            selected_model_name: Some("Whisper Preview".to_string()),
+            latency_profile: "fast".to_string(),
+            selected_model_name: Some("tiny.en-q5_1".to_string()),
         })?;
 
         let profile_id = profile.id.clone();

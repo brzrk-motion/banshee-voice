@@ -13,6 +13,7 @@ anyhow.workspace = true
 banshee-audio = { path = "../../../crates/audio" }
 banshee-core = { path = "../../../crates/core" }
 banshee-injector = { path = "../../../crates/injector" }
+banshee-models = { path = "../../../crates/models" }
 banshee-platform = { path = "../../../crates/platform" }
 banshee-stt = { path = "../../../crates/stt" }
 banshee-storage = { path = "../../../crates/storage" }

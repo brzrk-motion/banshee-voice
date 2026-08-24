@@ -1,58 +1,114 @@
-//! Speech-to-text engine adapters for Banshee.
+//! Local whisper.cpp speech-to-text engine.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use banshee_core::domain::{
     AppErrorCode, TranscriptionEngine, TranscriptionOutput, TranscriptionRequest,
 };
-use std::env;
+use std::path::Path;
+use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use thiserror::Error;
+use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 #[derive(Debug, Error)]
 pub enum SttError {
-    #[error("model missing")]
+    #[error("speech model is not ready")]
     ModelMissing,
     #[error("no speech detected")]
     NoSpeechDetected,
+    #[error("speech model failed to load: {0}")]
+    ModelLoadFailed(String),
+    #[error("transcription failed: {0}")]
+    InferenceFailed(String),
 }
 
 impl SttError {
     pub const fn code(&self) -> AppErrorCode {
         match self {
-            Self::ModelMissing => AppErrorCode::ModelMissing,
+            Self::ModelMissing | Self::ModelLoadFailed(_) => AppErrorCode::ModelMissing,
             Self::NoSpeechDetected => AppErrorCode::NoSpeechDetected,
+            Self::InferenceFailed(_) => AppErrorCode::InferenceFailed,
         }
     }
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct WhisperCppPreviewEngine;
+#[derive(Clone, Default)]
+pub struct WhisperCppEngine {
+    context: Arc<RwLock<Option<Arc<WhisperContext>>>>,
+}
 
-impl TranscriptionEngine for WhisperCppPreviewEngine {
+impl WhisperCppEngine {
+    pub fn load_model(&self, path: &Path) -> Result<()> {
+        let context = WhisperContext::new_with_params(path, WhisperContextParameters::default())
+            .map_err(|error| SttError::ModelLoadFailed(error.to_string()))?;
+        *self.context.write().expect("whisper context lock poisoned") = Some(Arc::new(context));
+        Ok(())
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.context
+            .read()
+            .expect("whisper context lock poisoned")
+            .is_some()
+    }
+}
+
+impl TranscriptionEngine for WhisperCppEngine {
     fn transcribe(&self, request: TranscriptionRequest) -> Result<TranscriptionOutput> {
         if request.audio.samples.is_empty() || request.audio.duration_ms < 150 {
             return Err(SttError::NoSpeechDetected.into());
         }
-
-        let model_name = request
-            .selected_model_name
-            .unwrap_or_else(|| "Whisper Preview".to_string());
-        if model_name.trim().is_empty() {
-            bail!(SttError::ModelMissing);
+        if request.audio.sample_rate_hz != 16_000 || request.audio.channels != 1 {
+            return Err(SttError::InferenceFailed("expected 16 kHz mono PCM".to_string()).into());
         }
 
-        let raw_text = if let Ok(value) = env::var("BANSHEE_PREVIEW_TRANSCRIPT") {
-            value
-        } else if request.audio.duration_ms > 4_000 {
-            "um please review the current changes and explain any risky edge cases period"
-                .to_string()
-        } else {
-            "um update the current file and keep the patch minimal period".to_string()
-        };
+        let context = self
+            .context
+            .read()
+            .expect("whisper context lock poisoned")
+            .clone()
+            .ok_or(SttError::ModelMissing)?;
+        let started = Instant::now();
+        let mut state = context
+            .create_state()
+            .map_err(|error| SttError::InferenceFailed(error.to_string()))?;
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        let threads = std::thread::available_parallelism()
+            .map(|count| count.get().min(8) as i32)
+            .unwrap_or(1);
+        params.set_n_threads(threads);
+        params.set_language(Some("en"));
+        params.set_translate(false);
+        params.set_no_context(true);
+        params.set_print_special(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
+        params.set_suppress_blank(true);
+        state
+            .full(params, &request.audio.samples)
+            .map_err(|error| SttError::InferenceFailed(error.to_string()))?;
+
+        let raw_text = state
+            .as_iter()
+            .map(|segment| {
+                segment
+                    .to_str_lossy()
+                    .map(|text| text.into_owned())
+                    .map_err(|error| SttError::InferenceFailed(error.to_string()))
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .join("")
+            .trim()
+            .to_string();
+        if raw_text.is_empty() {
+            return Err(SttError::NoSpeechDetected.into());
+        }
 
         Ok(TranscriptionOutput {
             raw_text,
-            backend: format!("whisper_cpp_preview:{model_name}"),
-            latency_ms: 120,
+            backend: "whisper.cpp:tiny.en-q5_1:cpu".to_string(),
+            latency_ms: started.elapsed().as_millis() as u64,
         })
     }
 }
@@ -62,38 +118,23 @@ mod tests {
     use super::*;
     use banshee_core::domain::{AccelerationPreference, CapturedAudio};
 
-    fn request(duration_ms: u64, selected_model_name: Option<&str>) -> TranscriptionRequest {
-        TranscriptionRequest {
-            audio: CapturedAudio {
-                samples: vec![0.2; 4_000],
-                sample_rate_hz: 16_000,
-                channels: 1,
-                duration_ms,
-            },
-            language: "en".to_string(),
-            acceleration_preference: AccelerationPreference::Auto,
-            latency_profile: "balanced".to_string(),
-            selected_model_name: selected_model_name.map(str::to_string),
-        }
-    }
-
     #[test]
-    fn rejects_empty_model_names() {
-        let engine = WhisperCppPreviewEngine;
+    fn reports_missing_model_before_inference() {
+        let engine = WhisperCppEngine::default();
         let error = engine
-            .transcribe(request(500, Some("   ")))
-            .expect_err("empty model names should fail");
-
-        assert!(error.to_string().contains("model missing"));
-    }
-
-    #[test]
-    fn emits_preview_backend_name() {
-        let engine = WhisperCppPreviewEngine;
-        let output = engine
-            .transcribe(request(500, Some("Tiny English")))
-            .expect("transcription should succeed");
-
-        assert_eq!(output.backend, "whisper_cpp_preview:Tiny English");
+            .transcribe(TranscriptionRequest {
+                audio: CapturedAudio {
+                    samples: vec![0.2; 4_000],
+                    sample_rate_hz: 16_000,
+                    channels: 1,
+                    duration_ms: 250,
+                },
+                language: "en".to_string(),
+                acceleration_preference: AccelerationPreference::Auto,
+                latency_profile: "fast".to_string(),
+                selected_model_name: Some("tiny.en-q5_1".to_string()),
+            })
+            .expect_err("an unloaded engine should fail");
+        assert!(error.to_string().contains("not ready"));
     }
 }

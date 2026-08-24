@@ -6,4 +6,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+anyhow.workspace = true
+reqwest.workspace = true
 serde.workspace = true
+sha1.workspace = true

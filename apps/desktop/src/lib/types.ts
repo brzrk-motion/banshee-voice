@@ -35,6 +35,19 @@ export type RecordingResult = {
   finalText: string;
 };
 
+export type ModelStatus = {
+  state: "missing" | "downloading" | "loading" | "ready" | "error";
+  modelName: string;
+  downloadedBytes: number;
+  totalBytes?: number | null;
+  message?: string | null;
+};
+
+export type RecordingSnapshot = {
+  state: RecordingStateChanged["state"];
+  lastTranscript?: string | null;
+};
+
 export type RecordingStateChanged = {
   state: "idle" | "recording" | "stopping" | "transcribing" | "inserting" | "error";
   transcriptionId?: string | null;

@@ -1,19 +1,24 @@
-//! Audio capture abstractions for Banshee.
+//! Cross-platform microphone capture for Banshee.
 
 use anyhow::{Result, anyhow, bail};
 use banshee_core::domain::{
     AudioCapture, AudioCaptureRequest, AudioInputDevice, CaptureSession, CapturedAudio,
 };
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{SampleFormat, Stream, StreamConfig};
 use std::collections::HashMap;
-use std::f32::consts::PI;
 use std::sync::{Arc, Mutex};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AudioError {
     #[error("microphone unavailable")]
     MicrophoneUnavailable,
+    #[error("microphone permission denied")]
+    PermissionDenied,
+    #[error("microphone stream failed: {0}")]
+    StreamFailed(String),
 }
 
 #[derive(Clone, Default)]
@@ -22,40 +27,155 @@ pub struct CpalAudioCapture {
 }
 
 struct ActiveSession {
-    started_at: Instant,
+    _stream: Stream,
+    samples: Arc<Mutex<Vec<f32>>>,
+    stream_error: Arc<Mutex<Option<String>>>,
     sample_rate_hz: u32,
     channels: u16,
 }
 
-fn preview_devices() -> Vec<AudioInputDevice> {
-    vec![
-        AudioInputDevice {
-            id: "system-default".to_string(),
-            name: "System Default Microphone".to_string(),
-            is_default: true,
-            channels: Some(1),
-            sample_rate_hz: Some(16_000),
-        },
-        AudioInputDevice {
-            id: "usb-headset".to_string(),
-            name: "USB Headset Microphone".to_string(),
-            is_default: false,
-            channels: Some(1),
-            sample_rate_hz: Some(16_000),
-        },
-    ]
+fn input_devices() -> Result<Vec<cpal::Device>> {
+    cpal::default_host()
+        .input_devices()
+        .map(|devices| devices.collect())
+        .map_err(map_device_error)
+}
+
+fn map_device_error(error: impl std::fmt::Display) -> anyhow::Error {
+    let message = error.to_string();
+    if message.to_ascii_lowercase().contains("permission")
+        || message.to_ascii_lowercase().contains("access denied")
+    {
+        anyhow!(AudioError::PermissionDenied)
+    } else {
+        anyhow!(AudioError::StreamFailed(message))
+    }
+}
+
+fn select_device(device_id: Option<&str>) -> Result<cpal::Device> {
+    let host = cpal::default_host();
+    if let Some(device_id) = device_id {
+        if device_id != "system-default" {
+            return input_devices()?
+                .into_iter()
+                .find(|device| device.name().ok().as_deref() == Some(device_id))
+                .ok_or_else(|| anyhow!(AudioError::MicrophoneUnavailable));
+        }
+    }
+    host.default_input_device()
+        .ok_or_else(|| anyhow!(AudioError::MicrophoneUnavailable))
+}
+
+fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
+    let channels = usize::from(channels.max(1));
+    samples
+        .chunks_exact(channels)
+        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+        .collect()
+}
+
+fn resample_linear(samples: &[f32], source_rate: u32, target_rate: u32) -> Vec<f32> {
+    if samples.is_empty() || source_rate == target_rate {
+        return samples.to_vec();
+    }
+    let output_len = ((samples.len() as u64 * target_rate as u64) / source_rate as u64) as usize;
+    let ratio = source_rate as f64 / target_rate as f64;
+    (0..output_len)
+        .map(|index| {
+            let source_position = index as f64 * ratio;
+            let lower = source_position.floor() as usize;
+            let upper = (lower + 1).min(samples.len() - 1);
+            let fraction = (source_position - lower as f64) as f32;
+            samples[lower] + (samples[upper] - samples[lower]) * fraction
+        })
+        .collect()
+}
+
+fn build_stream(
+    device: &cpal::Device,
+    supported: &cpal::SupportedStreamConfig,
+    samples: Arc<Mutex<Vec<f32>>>,
+    stream_error: Arc<Mutex<Option<String>>>,
+) -> Result<Stream> {
+    let config: StreamConfig = supported.clone().into();
+    let on_error = move |error: cpal::StreamError| {
+        *stream_error.lock().expect("stream error mutex poisoned") = Some(error.to_string());
+    };
+    let stream = match supported.sample_format() {
+        SampleFormat::F32 => device.build_input_stream(
+            &config,
+            move |data: &[f32], _| {
+                samples
+                    .lock()
+                    .expect("audio buffer mutex poisoned")
+                    .extend_from_slice(data)
+            },
+            on_error,
+            None,
+        ),
+        SampleFormat::I16 => device.build_input_stream(
+            &config,
+            move |data: &[i16], _| {
+                samples
+                    .lock()
+                    .expect("audio buffer mutex poisoned")
+                    .extend(data.iter().map(|sample| *sample as f32 / i16::MAX as f32));
+            },
+            on_error,
+            None,
+        ),
+        SampleFormat::U16 => device.build_input_stream(
+            &config,
+            move |data: &[u16], _| {
+                samples.lock().expect("audio buffer mutex poisoned").extend(
+                    data.iter()
+                        .map(|sample| (*sample as f32 / u16::MAX as f32) * 2.0 - 1.0),
+                );
+            },
+            on_error,
+            None,
+        ),
+        format => {
+            return Err(anyhow!(AudioError::StreamFailed(format!(
+                "unsupported sample format {format}"
+            ))));
+        }
+    }
+    .map_err(map_device_error)?;
+    Ok(stream)
 }
 
 impl AudioCapture for CpalAudioCapture {
     fn list_input_devices(&self) -> Result<Vec<AudioInputDevice>> {
-        Ok(preview_devices())
+        let default_name = cpal::default_host()
+            .default_input_device()
+            .and_then(|device| device.name().ok());
+        input_devices()?
+            .into_iter()
+            .map(|device| {
+                let name = device.name().map_err(map_device_error)?;
+                let config = device.default_input_config().map_err(map_device_error)?;
+                Ok(AudioInputDevice {
+                    id: name.clone(),
+                    is_default: default_name.as_deref() == Some(name.as_str()),
+                    name,
+                    channels: Some(config.channels()),
+                    sample_rate_hz: Some(config.sample_rate().0),
+                })
+            })
+            .collect()
     }
 
     fn start(&self, request: AudioCaptureRequest) -> Result<CaptureSession> {
         if request.channels == 0 || request.sample_rate_hz == 0 {
             bail!(AudioError::MicrophoneUnavailable);
         }
-
+        let device = select_device(request.device_id.as_deref())?;
+        let supported = device.default_input_config().map_err(map_device_error)?;
+        let samples = Arc::new(Mutex::new(Vec::new()));
+        let stream_error = Arc::new(Mutex::new(None));
+        let stream = build_stream(&device, &supported, samples.clone(), stream_error.clone())?;
+        stream.play().map_err(map_device_error)?;
         let session = CaptureSession {
             id: format!(
                 "capture-{}",
@@ -63,19 +183,19 @@ impl AudioCapture for CpalAudioCapture {
             ),
             device_id: request.device_id,
         };
-
         self.sessions
             .lock()
             .expect("audio sessions mutex poisoned")
             .insert(
                 session.id.clone(),
                 ActiveSession {
-                    started_at: Instant::now(),
-                    sample_rate_hz: request.sample_rate_hz,
-                    channels: request.channels,
+                    _stream: stream,
+                    samples,
+                    stream_error,
+                    sample_rate_hz: supported.sample_rate().0,
+                    channels: supported.channels(),
                 },
             );
-
         Ok(session)
     }
 
@@ -86,20 +206,23 @@ impl AudioCapture for CpalAudioCapture {
             .expect("audio sessions mutex poisoned")
             .remove(&session.id)
             .ok_or_else(|| anyhow!("unknown capture session"))?;
-
-        let duration_ms = active.started_at.elapsed().as_millis().max(250) as u64;
-        let sample_count = ((active.sample_rate_hz as u64 * duration_ms) / 1000) as usize;
-        let samples = (0..sample_count)
-            .map(|index| {
-                let t = index as f32 / active.sample_rate_hz as f32;
-                (2.0 * PI * 220.0 * t).sin() * 0.12
-            })
-            .collect();
-
+        drop(active._stream);
+        if let Some(error) = active
+            .stream_error
+            .lock()
+            .expect("stream error mutex poisoned")
+            .take()
+        {
+            bail!(AudioError::StreamFailed(error));
+        }
+        let interleaved = active.samples.lock().expect("audio buffer mutex poisoned");
+        let mono = downmix_to_mono(&interleaved, active.channels);
+        let samples = resample_linear(&mono, active.sample_rate_hz, 16_000);
+        let duration_ms = (samples.len() as u64 * 1_000) / 16_000;
         Ok(CapturedAudio {
             samples,
-            sample_rate_hz: active.sample_rate_hz,
-            channels: active.channels,
+            sample_rate_hz: 16_000,
+            channels: 1,
             duration_ms,
         })
     }
@@ -118,29 +241,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lists_preview_devices() {
-        let capture = CpalAudioCapture::default();
-        let devices = capture.list_input_devices().expect("devices should list");
-
-        assert!(devices.iter().any(|device| device.is_default));
-        assert!(
-            devices
-                .iter()
-                .all(|device| device.sample_rate_hz == Some(16_000))
-        );
+    fn downmixes_stereo_frames() {
+        assert_eq!(downmix_to_mono(&[1.0, -1.0, 0.5, 0.5], 2), vec![0.0, 0.5]);
     }
 
     #[test]
-    fn rejects_zero_channel_requests() {
-        let capture = CpalAudioCapture::default();
-        let error = capture
-            .start(AudioCaptureRequest {
-                device_id: None,
-                channels: 0,
-                sample_rate_hz: 16_000,
-            })
-            .expect_err("zero channel requests should fail");
-
-        assert!(error.to_string().contains("microphone unavailable"));
+    fn resamples_to_requested_rate() {
+        assert_eq!(
+            resample_linear(&vec![0.0; 48_000], 48_000, 16_000).len(),
+            16_000
+        );
     }
 }

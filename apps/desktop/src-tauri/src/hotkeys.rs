@@ -104,7 +104,7 @@ pub fn handle_event(app: &AppHandle, shortcut: &Shortcut, state: ShortcutState) 
                     == Some(RecordingTrigger::HoldToTalk);
 
                 if should_stop {
-                    let _ = stop_recording(app, &app_state);
+                    stop_recording_in_background(app.clone());
                 }
             }
         }
@@ -120,7 +120,7 @@ pub fn handle_event(app: &AppHandle, shortcut: &Shortcut, state: ShortcutState) 
             .is_some();
 
         if active {
-            let _ = stop_recording(app, &app_state);
+            stop_recording_in_background(app.clone());
         } else {
             let _ = start_recording_with_trigger(app, &app_state, RecordingTrigger::Toggle);
         }
@@ -130,4 +130,11 @@ pub fn handle_event(app: &AppHandle, shortcut: &Shortcut, state: ShortcutState) 
     if shortcut == &registered.cancel && matches!(state, ShortcutState::Pressed) {
         let _ = cancel_recording(app, &app_state);
     }
+}
+
+fn stop_recording_in_background(app: AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ManagedAppState>().inner().clone();
+        let _ = stop_recording(&app, &state);
+    });
 }

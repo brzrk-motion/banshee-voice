@@ -8,5 +8,6 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 banshee-core = { path = "../core" }
+cpal.workspace = true
 serde.workspace = true
 thiserror.workspace = true

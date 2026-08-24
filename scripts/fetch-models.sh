@@ -7,7 +7,7 @@ MODELS_DIR="${ROOT_DIR}/models"
 WHISPER_DIR="${MODELS_DIR}/whisper"
 LLAMA_DIR="${MODELS_DIR}/llama"
 
-WHISPER_MODEL="small.en"
+WHISPER_MODEL="tiny.en-q5_1"
 FETCH_CLEANUP_MODEL=0
 CLEANUP_URL=""
 
@@ -18,8 +18,8 @@ Usage: scripts/fetch-models.sh [options]
 Downloads local model files into ./models, which is gitignored.
 
 Options:
-  --whisper-model <name>   Whisper preset: tiny.en, base.en, small.en, medium.en
-                           Default: small.en
+  --whisper-model <name>   Whisper preset: tiny.en-q5_1, tiny.en, base.en, small.en, medium.en
+                           Default: tiny.en-q5_1
   --with-cleanup-model     Also download a default llama.cpp-compatible cleanup model
   --cleanup-url <url>      Download a cleanup model from a custom URL instead
   -h, --help               Show this help text
@@ -55,6 +55,7 @@ download_file() {
 
 whisper_url_for() {
   case "$1" in
+    tiny.en-q5_1) printf 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin' ;;
     tiny.en) printf 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin' ;;
     base.en) printf 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin' ;;
     small.en) printf 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin' ;;

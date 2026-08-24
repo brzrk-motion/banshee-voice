@@ -6,7 +6,7 @@ import { HistoryPage } from "@/features/history/HistoryPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TranscribePage } from "@/features/transcribe/TranscribePage";
 import { errorMessage, run } from "@/lib/tauri";
-import type { AudioInputDevice, PageId, RecordingResult, RecordingStateChanged, Settings } from "@/lib/types";
+import type { AudioInputDevice, ModelStatus, PageId, RecordingResult, RecordingSnapshot, RecordingStateChanged, Settings } from "@/lib/types";
 
 export default function App() {
   const [page, setPage] = useState<PageId>("transcribe");
@@ -16,21 +16,35 @@ export default function App() {
   const [scratchText, setScratchText] = useState("");
   const [completedSessionId, setCompletedSessionId] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [modelStatus, setModelStatus] = useState<ModelStatus>({ state: "missing", modelName: "tiny.en-q5_1", downloadedBytes: 0 });
 
   useEffect(() => {
     void Promise.all([
       run<Settings>("settings_get"),
       run<AudioInputDevice[]>("audio_list_input_devices"),
-    ]).then(([loadedSettings, loadedDevices]) => {
+      run<ModelStatus>("model_status_get"),
+      run<RecordingSnapshot>("recording_snapshot_get"),
+    ]).then(([loadedSettings, loadedDevices, loadedModelStatus, snapshot]) => {
       setSettings(loadedSettings);
       setDevices(loadedDevices);
+      setModelStatus(loadedModelStatus);
+      setRecordingState(snapshot.state);
+      if (snapshot.lastTranscript) setScratchText(snapshot.lastTranscript);
     }).catch((error) => toast.error("Banshee could not load", { description: errorMessage(error) }));
 
-    let dispose = () => {};
+    const disposers: Array<() => void> = [];
     listen<RecordingStateChanged>("recording_state_changed", (event) => setRecordingState(event.payload.state))
-      .then((unlisten) => { dispose = unlisten; })
+      .then((unlisten) => { disposers.push(unlisten); })
       .catch(() => {});
-    return () => dispose();
+    listen<ModelStatus>("model_status_changed", (event) => setModelStatus(event.payload))
+      .then((unlisten) => { disposers.push(unlisten); })
+      .catch(() => {});
+    listen<RecordingResult>("transcription_completed", (event) => {
+      setScratchText(event.payload.finalText);
+      setCompletedSessionId(event.payload.sessionId);
+      setRecordingState("idle");
+    }).then((unlisten) => { disposers.push(unlisten); }).catch(() => {});
+    return () => disposers.forEach((dispose) => dispose());
   }, []);
 
   async function startRecording() {
@@ -76,6 +90,15 @@ export default function App() {
     }
   }
 
+  async function retryModelDownload() {
+    setModelStatus((current) => ({ ...current, state: "missing", message: null }));
+    try {
+      await run("model_download_retry");
+    } catch (error) {
+      toast.error("Model download could not start", { description: errorMessage(error) });
+    }
+  }
+
   async function saveSettings(next: Settings) {
     setSavingSettings(true);
     try {
@@ -98,10 +121,12 @@ export default function App() {
             onTextChange={setScratchText}
             recordingState={recordingState}
             completedSessionId={completedSessionId}
+            modelStatus={modelStatus}
             onStart={startRecording}
             onStop={stopRecording}
             onCancel={cancelRecording}
             onCopy={copyText}
+            onRetryModel={retryModelDownload}
           />
         ) : null}
         {page === "history" ? <HistoryPage onCopy={copyText} /> : null}
