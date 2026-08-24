@@ -1,7 +1,7 @@
 //! Transcript transformation and optional local LLM cleanup for Banshee.
 
 use anyhow::{Context, Result, bail};
-use banshee_core::domain::{CleanupEngine, CleanupOutput, CleanupRequest, DictionaryEntry};
+use banshee_contracts::domain::{CleanupEngine, CleanupOutput, CleanupRequest, DictionaryEntry};
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
@@ -302,7 +302,7 @@ fn valid_refinement(input: &str, output: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use banshee_core::domain::ProfileSummary;
+    use banshee_contracts::domain::ProfileSummary;
 
     fn request(raw_text: &str) -> CleanupRequest {
         CleanupRequest {

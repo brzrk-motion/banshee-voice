@@ -1,0 +1,10 @@
+{
+  "name": "@banshee/core",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "node ../../scripts/run-rust.mjs cargo build --package banshee-core",
+    "test": "node ../../scripts/run-rust.mjs cargo test --workspace",
+    "check": "node ../../scripts/run-rust.mjs cargo check --workspace"
+  }
+}

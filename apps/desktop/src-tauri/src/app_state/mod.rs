@@ -1,21 +1,21 @@
 pub mod ipc;
 
-use banshee_audio::CpalAudioCapture;
+use banshee_core::audio::CpalAudioCapture;
+use banshee_core::injector::ClipboardInjector;
+use banshee_core::models::{ModelCapability, ModelInstaller, ModelState, ModelsStatus};
+use banshee_core::platform::EnvActiveWindowProvider;
+use banshee_core::platform::PlatformCapabilityProbe;
+use banshee_core::storage::SqliteDictionaryRepository;
+use banshee_core::storage::SqliteTranscriptionRepository;
+use banshee_core::storage::initialize_storage;
+use banshee_core::stt::WhisperCppEngine;
+use banshee_core::transformer::TranscriptCleanup;
+use banshee_core::vad::SimpleVadProcessor;
 use banshee_core::{
     AppServices,
     domain::{RecordingSession, RecordingSnapshot},
     pipeline::{PipelineServices, RecordingPipeline},
 };
-use banshee_injector::ClipboardInjector;
-use banshee_models::{ModelCapability, ModelInstaller, ModelState, ModelsStatus};
-use banshee_platform::EnvActiveWindowProvider;
-use banshee_platform::PlatformCapabilityProbe;
-use banshee_storage::SqliteDictionaryRepository;
-use banshee_storage::SqliteTranscriptionRepository;
-use banshee_storage::initialize_storage;
-use banshee_stt::WhisperCppEngine;
-use banshee_transformer::TranscriptCleanup;
-use banshee_vad::SimpleVadProcessor;
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 

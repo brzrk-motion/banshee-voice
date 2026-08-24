@@ -1,7 +1,7 @@
 //! Cross-platform microphone capture for Banshee.
 
 use anyhow::{Result, anyhow, bail};
-use banshee_core::domain::{
+use banshee_contracts::domain::{
     AudioCapture, AudioCaptureRequest, AudioInputDevice, CaptureSession, CapturedAudio,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};

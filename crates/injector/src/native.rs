@@ -1,10 +1,10 @@
 use anyhow::Result;
-use banshee_core::domain::OutputTarget;
+use banshee_contracts::domain::OutputTarget;
 
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use banshee_core::domain::ScreenRect;
+    use banshee_contracts::domain::ScreenRect;
     use windows::Win32::{
         Foundation::{HWND, RECT},
         System::Com::{
@@ -210,7 +210,7 @@ end tell"#;
             .unwrap_or("Focused application")
             .to_string();
         let bounds = fields.get(4..8).and_then(|values| {
-            Some(banshee_core::domain::ScreenRect {
+            Some(banshee_contracts::domain::ScreenRect {
                 x: values[0].parse().ok()?,
                 y: values[1].parse().ok()?,
                 width: values[2].parse().ok()?,
@@ -248,7 +248,7 @@ end tell"#;
 mod platform {
     use super::*;
     use atspi::{AccessibilityConnection, ObjectRefOwned, Role, State, connection::P2P};
-    use banshee_core::domain::ScreenRect;
+    use banshee_contracts::domain::ScreenRect;
     use futures_lite::future::block_on;
     use std::collections::VecDeque;
     use x11rb::{

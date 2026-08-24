@@ -12,7 +12,8 @@ members = [
   "crates/models",
   "crates/platform",
   "crates/storage",
-  "crates/core",
+  "crates/contracts",
+  "packages/core",
 ]
 resolver = "2"
 

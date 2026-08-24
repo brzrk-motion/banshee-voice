@@ -1,4 +1,4 @@
-use banshee_core::domain::{PlatformCapabilities, PlatformSupportTier, SessionType};
+use banshee_contracts::domain::{PlatformCapabilities, PlatformSupportTier, SessionType};
 #[cfg(target_os = "linux")]
 use std::env;
 

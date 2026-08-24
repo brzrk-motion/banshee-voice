@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 arboard.workspace = true
-banshee-core = { path = "../core" }
+banshee-contracts = { path = "../contracts" }
 serde.workspace = true
 thiserror.workspace = true
 

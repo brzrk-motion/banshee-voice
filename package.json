@@ -1,0 +1,23 @@
+{
+  "name": "banshee-voice",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.19.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run tauri:dev --filter=@banshee/desktop",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "check": "turbo run check",
+    "desktop:build": "turbo run tauri:build --filter=@banshee/desktop"
+  },
+  "devDependencies": {
+    "turbo": "2.10.11"
+  },
+  "allowScripts": {
+    "esbuild": true
+  }
+}

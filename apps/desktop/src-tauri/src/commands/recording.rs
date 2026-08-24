@@ -5,7 +5,9 @@ use crate::{
     },
     events::hud::{emit_audio_level, emit_hud_state, emit_recording_state},
 };
-use banshee_audio::AudioError;
+use banshee_core::audio::AudioError;
+use banshee_core::injector::InjectorError;
+use banshee_core::stt::SttError;
 use banshee_core::{
     domain::{
         AppError, AppErrorCode, AudioLevelChanged, FallbackUsed, HudState, HudStateChanged,
@@ -13,8 +15,6 @@ use banshee_core::{
     },
     pipeline::PipelineError,
 };
-use banshee_injector::InjectorError;
-use banshee_stt::SttError;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager};
 

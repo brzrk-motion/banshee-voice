@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use banshee_core::domain::{
+use banshee_contracts::domain::{
     AccelerationPreference, HistoryItem, HistoryPage, OutputMethod, OutputResultKind,
     PipelineRunResult, PipelineRunStatus,
 };
@@ -163,7 +163,9 @@ fn encode_output_result(value: OutputResultKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use banshee_core::domain::{ActiveWindowInfo, OutputResponse, RecordingOrigin, SessionType};
+    use banshee_contracts::domain::{
+        ActiveWindowInfo, OutputResponse, RecordingOrigin, SessionType,
+    };
 
     fn repository() -> SqliteTranscriptionRepository {
         let mut connection = Connection::open_in_memory().expect("database should open");

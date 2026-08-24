@@ -1,7 +1,7 @@
 //! Local whisper.cpp speech-to-text engine.
 
 use anyhow::Result;
-use banshee_core::domain::{
+use banshee_contracts::domain::{
     AppErrorCode, TranscriptionEngine, TranscriptionOutput, TranscriptionRequest,
 };
 use std::path::Path;
@@ -142,7 +142,7 @@ impl TranscriptionEngine for WhisperCppEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use banshee_core::domain::{AccelerationPreference, CapturedAudio};
+    use banshee_contracts::domain::{AccelerationPreference, CapturedAudio};
 
     #[test]
     fn reports_missing_model_before_inference() {

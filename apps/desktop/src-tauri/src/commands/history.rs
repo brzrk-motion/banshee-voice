@@ -3,7 +3,7 @@ use crate::app_state::{
     ipc::{AppErrorDto, HistoryQueryDto},
 };
 use banshee_core::domain::HistoryPage;
-use banshee_injector::ClipboardInjector;
+use banshee_core::injector::ClipboardInjector;
 
 #[tauri::command]
 pub fn history_list(

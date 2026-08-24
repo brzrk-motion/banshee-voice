@@ -9,12 +9,26 @@ Target-aware paste uses Windows UI Automation, macOS Accessibility, and AT-SPI w
 ## Development prerequisites
 
 - Rust and Node.js
-- CMake and libclang/LLVM (required to build the `whisper-rs` native dependency; `npm run tauri:dev` bootstraps isolated copies automatically on Windows)
+- CMake and libclang/LLVM (required to build the `whisper-rs` native dependency; `npm run dev` bootstraps isolated copies automatically on Windows)
 - Windows: Visual Studio C++ build tools
 - macOS: Xcode command-line tools
 - Linux: a C++ toolchain plus ALSA development headers
 
-Install frontend dependencies with `npm install` in `apps/desktop`, then run `npm run tauri:dev`. On first launch, Banshee downloads the approximately 141 MiB speech model into the platform application-data directory and verifies its published SHA-256 before loading it. Enabling the cleanup model in Settings downloads an additional approximately 379 MiB model. After installation, recording and cleanup are offline.
+Install all workspace dependencies from the repository root, then launch the desktop app:
+
+```bash
+npm install
+npm run dev
+```
+
+The root Turbo workspace also provides `npm run build`, `npm run test`, `npm run check`, and `npm run desktop:build`. On first launch, Banshee downloads the approximately 141 MiB speech model into the platform application-data directory and verifies its published SHA-256 before loading it. Enabling the cleanup model in Settings downloads an additional approximately 379 MiB model. After installation, recording and cleanup are offline.
+
+## Repository structure
+
+- `apps/desktop` contains the Tauri desktop application.
+- `packages/core` is the public Rust facade imported by Banshee applications.
+- `crates` contains private Rust implementation crates used by the core facade.
+- `plugins` is reserved for future independent plugin repositories. It is intentionally not an npm, Cargo, or Turbo workspace and contains no plugin architecture today.
 
 For development or model verification, download the same model into the ignored repository `models` directory:
 

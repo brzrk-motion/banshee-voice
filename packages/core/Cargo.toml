@@ -1,0 +1,25 @@
+[package]
+name = "banshee-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+banshee-audio = { path = "../../crates/audio" }
+banshee-context = { path = "../../crates/context" }
+banshee-contracts = { path = "../../crates/contracts" }
+banshee-dictionary = { path = "../../crates/dictionary" }
+banshee-history = { path = "../../crates/history" }
+banshee-injector = { path = "../../crates/injector" }
+banshee-models = { path = "../../crates/models" }
+banshee-platform = { path = "../../crates/platform" }
+banshee-storage = { path = "../../crates/storage" }
+banshee-stt = { path = "../../crates/stt" }
+banshee-transformer = { path = "../../crates/transformer" }
+banshee-vad = { path = "../../crates/vad" }
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true

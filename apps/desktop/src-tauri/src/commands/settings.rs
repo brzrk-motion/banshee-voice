@@ -3,7 +3,7 @@ use crate::app_state::{
     ipc::{AppErrorDto, AudioInputDeviceDto, SettingsDto, SettingsUpdateDto},
 };
 use crate::hotkeys;
-use banshee_storage::settings_repo::SettingsValidationError;
+use banshee_core::storage::settings_repo::SettingsValidationError;
 
 #[tauri::command]
 pub fn settings_get(state: tauri::State<'_, ManagedAppState>) -> Result<SettingsDto, AppErrorDto> {

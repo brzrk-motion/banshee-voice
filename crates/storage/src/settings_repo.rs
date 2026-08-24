@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use banshee_core::domain::{
+use banshee_contracts::domain::{
     AccelerationPreference, AudioRetentionPolicy, Settings, SettingsStore, SettingsUpdate,
 };
 use rusqlite::{Connection, params};

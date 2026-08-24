@@ -1,5 +1,5 @@
 use anyhow::Result;
-use banshee_core::domain::{ProfileStore, ProfileSummary};
+use banshee_contracts::domain::{ProfileStore, ProfileSummary};
 use rusqlite::{Connection, params};
 use std::sync::{Arc, Mutex};
 

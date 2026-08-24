@@ -4,7 +4,7 @@ mod native;
 
 use anyhow::{Result, anyhow};
 use arboard::Clipboard;
-use banshee_core::domain::{
+use banshee_contracts::domain::{
     OutputBackend, OutputMethod, OutputRequest, OutputResponse, OutputResultKind, OutputTarget,
     SessionType,
 };
@@ -135,7 +135,7 @@ impl ClipboardInjector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use banshee_core::domain::ScreenRect;
+    use banshee_contracts::domain::ScreenRect;
 
     #[derive(Default)]
     struct MemoryClipboard {

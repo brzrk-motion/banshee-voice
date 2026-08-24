@@ -1,7 +1,7 @@
 //! Voice activity detection abstractions for Banshee.
 
 use anyhow::Result;
-use banshee_core::domain::{CapturedAudio, VadProcessor, VadResult};
+use banshee_contracts::domain::{CapturedAudio, VadProcessor, VadResult};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SimpleVadProcessor;

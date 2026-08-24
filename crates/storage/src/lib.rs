@@ -7,7 +7,7 @@ pub mod settings_repo;
 pub mod transcription_repo;
 
 use anyhow::{Context, Result};
-use banshee_core::domain::AppPaths;
+use banshee_contracts::domain::AppPaths;
 use rusqlite::Connection;
 use std::env;
 use std::fs;

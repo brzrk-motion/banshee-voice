@@ -322,7 +322,7 @@ name = "banshee-audio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "banshee-core",
+ "banshee-contracts",
  "cpal",
  "serde",
  "thiserror 2.0.20",
@@ -337,10 +337,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "banshee-contracts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+]
+
+[[package]]
 name = "banshee-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "banshee-audio",
+ "banshee-context",
+ "banshee-contracts",
+ "banshee-dictionary",
+ "banshee-history",
+ "banshee-injector",
+ "banshee-models",
+ "banshee-platform",
+ "banshee-storage",
+ "banshee-stt",
+ "banshee-transformer",
+ "banshee-vad",
  "serde",
  "thiserror 2.0.20",
  "tokio",
@@ -352,15 +372,7 @@ name = "banshee-desktop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "banshee-audio",
  "banshee-core",
- "banshee-injector",
- "banshee-models",
- "banshee-platform",
- "banshee-storage",
- "banshee-stt",
- "banshee-transformer",
- "banshee-vad",
  "serde",
  "tauri",
  "tauri-build",
@@ -390,7 +402,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "atspi",
- "banshee-core",
+ "banshee-contracts",
  "futures-lite",
  "serde",
  "thiserror 2.0.20",
@@ -413,7 +425,7 @@ name = "banshee-platform"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "banshee-core",
+ "banshee-contracts",
  "serde",
  "thiserror 2.0.20",
 ]
@@ -423,7 +435,7 @@ name = "banshee-storage"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "banshee-core",
+ "banshee-contracts",
  "rusqlite",
  "serde",
  "serde_json",
@@ -435,7 +447,7 @@ name = "banshee-stt"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "banshee-core",
+ "banshee-contracts",
  "serde",
  "thiserror 2.0.20",
  "whisper-rs",
@@ -446,7 +458,7 @@ name = "banshee-transformer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "banshee-core",
+ "banshee-contracts",
  "encoding_rs",
  "llama-cpp-2",
  "serde",
@@ -457,7 +469,7 @@ name = "banshee-vad"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "banshee-core",
+ "banshee-contracts",
  "serde",
 ]
 

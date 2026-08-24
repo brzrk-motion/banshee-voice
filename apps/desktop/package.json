@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "npm@11.19.0",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 1420",
     "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
-    "tauri:dev": "node ../../scripts/tauri-dev.mjs",
-    "tauri:build": "tauri build"
+    "tauri:dev": "node ../../scripts/tauri.mjs dev",
+    "tauri:build": "node ../../scripts/tauri.mjs build"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.15",

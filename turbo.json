@@ -1,0 +1,34 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "tasks": {
+    "build": {
+      "outputs": ["dist/**"]
+    },
+    "test": {},
+    "check": {},
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "tauri:dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "tauri:build": {
+      "cache": false
+    },
+    "@banshee/core#build": {
+      "cache": false
+    },
+    "@banshee/core#test": {
+      "cache": false
+    },
+    "@banshee/core#check": {
+      "cache": false
+    },
+    "@banshee/desktop#tauri:build": {
+      "dependsOn": ["@banshee/core#build"],
+      "cache": false
+    }
+  }
+}

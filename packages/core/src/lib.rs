@@ -1,7 +1,19 @@
 //! Core orchestration services for Banshee.
 
-pub mod domain;
 pub mod pipeline;
+
+pub use banshee_audio as audio;
+pub use banshee_context as context;
+pub use banshee_contracts::domain;
+pub use banshee_dictionary as dictionary;
+pub use banshee_history as history;
+pub use banshee_injector as injector;
+pub use banshee_models as models;
+pub use banshee_platform as platform;
+pub use banshee_storage as storage;
+pub use banshee_stt as stt;
+pub use banshee_transformer as transformer;
+pub use banshee_vad as vad;
 
 use std::sync::Arc;
 

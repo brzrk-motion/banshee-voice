@@ -1,5 +1,5 @@
 use anyhow::Result;
-use banshee_core::domain::{ActiveWindowInfo, ActiveWindowProvider};
+use banshee_contracts::domain::{ActiveWindowInfo, ActiveWindowProvider};
 use std::env;
 
 #[derive(Debug, Default, Clone, Copy)]

@@ -1,5 +1,5 @@
 use anyhow::{Result, bail};
-use banshee_core::domain::{DictionaryEntry, DictionaryStore};
+use banshee_contracts::domain::{DictionaryEntry, DictionaryStore};
 use rusqlite::{Connection, params};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};

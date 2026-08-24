@@ -1,5 +1,5 @@
 use crate::{app_state::ManagedAppState, app_state::ipc::AppErrorDto};
-use banshee_models::{ModelCapability, ModelStatus, ModelsStatus};
+use banshee_core::models::{ModelCapability, ModelStatus, ModelsStatus};
 
 #[tauri::command]
 pub fn models_status_get(state: tauri::State<'_, ManagedAppState>) -> ModelsStatus {

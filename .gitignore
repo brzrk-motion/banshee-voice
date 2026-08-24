@@ -16,8 +16,14 @@ Thumbs.db
 /target/
 
 # Frontend
-apps/desktop/node_modules/
-apps/desktop/dist/
+/node_modules/
+/.turbo/
+apps/*/node_modules/
+apps/*/dist/
+apps/*/.turbo/
+packages/*/node_modules/
+packages/*/dist/
+packages/*/.turbo/
 
 # Tauri bundle output
 apps/desktop/src-tauri/target/
