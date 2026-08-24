@@ -1,5 +1,6 @@
 //! SQLite storage services for Banshee.
 
+pub mod dictionary_repo;
 pub mod migrations;
 pub mod profile_repo;
 pub mod settings_repo;
@@ -13,6 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+pub use dictionary_repo::SqliteDictionaryRepository;
 pub use profile_repo::SqliteProfileRepository;
 pub use settings_repo::SqliteSettingsRepository;
 pub use transcription_repo::SqliteTranscriptionRepository;
@@ -123,12 +125,14 @@ pub fn initialize_storage() -> Result<StorageRuntime> {
     profiles.seed_builtin_profiles()?;
 
     let transcriptions = SqliteTranscriptionRepository::new(connection.clone());
+    let dictionary = SqliteDictionaryRepository::new(connection.clone());
 
     Ok(StorageRuntime {
         paths,
         connection,
         settings,
         profiles,
+        dictionary,
         transcriptions,
     })
 }
@@ -139,6 +143,7 @@ pub struct StorageRuntime {
     pub connection: Arc<Mutex<Connection>>,
     pub settings: SqliteSettingsRepository,
     pub profiles: SqliteProfileRepository,
+    pub dictionary: SqliteDictionaryRepository,
     pub transcriptions: SqliteTranscriptionRepository,
 }
 

@@ -28,14 +28,30 @@ export type RecordingResult = {
   sessionId: string;
   finalText: string;
   origin: "scratch" | "push_to_talk";
+  sttBackend: string;
+  cleanupBackend: string;
+  sttLatencyMs: number;
+  cleanupLatencyMs: number;
+  cleanupFallbackReason?: string | null;
 };
 
 export type ModelStatus = {
+  capability: "speech" | "cleanup";
   state: "missing" | "downloading" | "loading" | "ready" | "error";
   modelName: string;
   downloadedBytes: number;
   totalBytes?: number | null;
   message?: string | null;
+};
+
+export type ModelsStatus = {
+  speech: ModelStatus;
+  cleanup: ModelStatus;
+};
+
+export type DictionaryEntry = {
+  spokenForm: string;
+  outputForm: string;
 };
 
 export type RecordingSnapshot = {

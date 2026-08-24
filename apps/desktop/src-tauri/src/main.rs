@@ -29,13 +29,17 @@ fn main() {
             app.manage(state);
             windows::register(app.handle())?;
             tray::initialize(app.handle())?;
-            app.state::<app_state::ManagedAppState>()
-                .ensure_model(app.handle().clone());
             let settings = app
                 .state::<app_state::ManagedAppState>()
                 .services()
                 .settings()
                 .map_err(setup_error)?;
+            app.state::<app_state::ManagedAppState>()
+                .ensure_speech_model(app.handle().clone());
+            if settings.cleanup_llm_enabled {
+                app.state::<app_state::ManagedAppState>()
+                    .ensure_cleanup_model(app.handle().clone());
+            }
             hotkeys::sync(app.handle(), &settings)
                 .map_err(|error| setup_error(anyhow::anyhow!(error)))?;
             if !settings.start_minimized {
@@ -65,7 +69,9 @@ fn main() {
             commands::settings::settings_get,
             commands::settings::settings_update,
             commands::settings::audio_list_input_devices,
-            commands::models::model_status_get,
+            commands::dictionary::dictionary_entries_get,
+            commands::dictionary::dictionary_entries_replace,
+            commands::models::models_status_get,
             commands::models::model_download_retry,
             commands::recording::recording_start_manual,
             commands::recording::recording_stop_manual,

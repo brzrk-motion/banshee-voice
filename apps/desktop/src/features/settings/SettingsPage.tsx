@@ -7,24 +7,42 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import type { AudioInputDevice, Settings } from "@/lib/types";
+import { Textarea } from "@/components/ui/textarea";
+import type { AudioInputDevice, DictionaryEntry, ModelStatus, Settings } from "@/lib/types";
 import { ShortcutCapture } from "./ShortcutCapture";
 
 type Props = {
   settings: Settings | null;
   devices: AudioInputDevice[];
+  vocabulary: DictionaryEntry[];
+  cleanupStatus: ModelStatus;
   saving: boolean;
-  onSave: (settings: Settings) => Promise<void>;
+  onSave: (settings: Settings, vocabulary: DictionaryEntry[]) => Promise<void>;
+  onRetryCleanup: () => Promise<void>;
 };
+
+function formatVocabulary(entries: DictionaryEntry[]) {
+  return entries.map((entry) => entry.spokenForm === entry.outputForm ? entry.outputForm : `${entry.spokenForm} => ${entry.outputForm}`).join("\n");
+}
+
+function parseVocabulary(value: string): DictionaryEntry[] {
+  return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const separator = line.indexOf("=>");
+    if (separator < 0) return { spokenForm: line, outputForm: line };
+    return { spokenForm: line.slice(0, separator).trim(), outputForm: line.slice(separator + 2).trim() };
+  });
+}
 
 function SettingRow({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return <div className="grid gap-3 border-t py-4 first:border-t-0 first:pt-0 sm:grid-cols-[minmax(0,1fr)_260px] sm:items-center"><div><Label>{title}</Label><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div><div>{children}</div></div>;
 }
 
-export function SettingsPage({ settings, devices, saving, onSave }: Props) {
+export function SettingsPage({ settings, devices, vocabulary, cleanupStatus, saving, onSave, onRetryCleanup }: Props) {
   const [draft, setDraft] = useState<Settings | null>(settings);
+  const [vocabularyDraft, setVocabularyDraft] = useState(formatVocabulary(vocabulary));
   useEffect(() => setDraft(settings), [settings]);
-  const dirty = useMemo(() => Boolean(draft && settings && JSON.stringify(draft) !== JSON.stringify(settings)), [draft, settings]);
+  useEffect(() => setVocabularyDraft(formatVocabulary(vocabulary)), [vocabulary]);
+  const dirty = useMemo(() => Boolean(draft && settings && (JSON.stringify(draft) !== JSON.stringify(settings) || vocabularyDraft !== formatVocabulary(vocabulary))), [draft, settings, vocabulary, vocabularyDraft]);
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
 
   if (!draft) return <div className="mx-auto max-w-4xl space-y-4 p-6 lg:p-8"><div className="h-48 animate-pulse rounded-xl bg-muted" /><div className="h-48 animate-pulse rounded-xl bg-muted" /></div>;
@@ -74,14 +92,20 @@ export function SettingsPage({ settings, devices, saving, onSave }: Props) {
       <Card>
         <CardHeader><CardTitle>Processing & privacy</CardTitle><CardDescription>Transcription stays local. History contains text only.</CardDescription></CardHeader>
         <CardContent>
-          <SettingRow title="Acceleration" description="Choose how local inference uses available hardware."><NativeSelect aria-label="Acceleration" value={draft.accelerationPreference} onChange={(event) => update("accelerationPreference", event.target.value as Settings["accelerationPreference"])}><option value="auto">Automatic</option><option value="cpu">CPU</option><option value="gpu">GPU</option></NativeSelect></SettingRow>
-          <SettingRow title="Cleanup model" description="Apply the optional local cleanup pass after transcription."><Switch aria-label="Cleanup model" checked={draft.cleanupLlmEnabled} onCheckedChange={(value) => update("cleanupLlmEnabled", value)} /></SettingRow>
+          <SettingRow title="Acceleration" description="This build currently runs local inference on CPU."><NativeSelect aria-label="Acceleration" value={draft.accelerationPreference} onChange={(event) => update("accelerationPreference", event.target.value as Settings["accelerationPreference"])}><option value="auto">Automatic (CPU)</option><option value="cpu">CPU</option><option value="gpu" disabled>GPU unavailable in this build</option></NativeSelect></SettingRow>
+          <SettingRow title="Cleanup model" description="Optionally refine transcripts locally. Missing or slow cleanup always falls back to deterministic text.">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3"><Switch aria-label="Cleanup model" checked={draft.cleanupLlmEnabled} onCheckedChange={(value) => update("cleanupLlmEnabled", value)} /><span className="text-xs text-muted-foreground">{cleanupStatus.state === "downloading" && cleanupStatus.totalBytes ? `Downloading ${Math.round(cleanupStatus.downloadedBytes / cleanupStatus.totalBytes * 100)}%` : cleanupStatus.state === "ready" ? "Installed" : cleanupStatus.state === "error" ? "Download failed" : "Not installed"}</span></div>
+              {cleanupStatus.state === "error" ? <Button type="button" size="sm" variant="outline" onClick={() => void onRetryCleanup()}>Retry cleanup download</Button> : null}
+            </div>
+          </SettingRow>
+          <SettingRow title="Custom vocabulary" description="One canonical term per line, or use “heard phrase => Correct Term” for explicit aliases."><Textarea aria-label="Custom vocabulary" rows={7} value={vocabularyDraft} placeholder={"Banshee\nHUD\nbanci hud => Banshee HUD"} onChange={(event) => setVocabularyDraft(event.target.value)} /></SettingRow>
           <SettingRow title="Save text history" description="Store completed transcript text locally. Audio is never retained."><Switch aria-label="Save text history" checked={draft.historyEnabled} onCheckedChange={(value) => update("historyEnabled", value)} /></SettingRow>
         </CardContent>
       </Card>
 
       <div className="sticky bottom-0 z-10 flex justify-end border-t bg-background/95 px-6 py-4 backdrop-blur">
-        <Button disabled={!dirty || saving} onClick={() => void onSave(draft)}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}{saving ? "Saving..." : "Save changes"}</Button>
+        <Button disabled={!dirty || saving} onClick={() => void onSave(draft, parseVocabulary(vocabularyDraft))}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}{saving ? "Saving..." : "Save changes"}</Button>
       </div>
     </div>
   );

@@ -62,8 +62,10 @@ impl AppServices {
             words_today: 0,
             speech_minutes_today: 0,
             microphone_name,
-            speech_model_name: Some("Whisper tiny.en Q5_1".to_string()),
-            cleanup_model_name: None,
+            speech_model_name: Some("Whisper base.en".to_string()),
+            cleanup_model_name: settings
+                .cleanup_llm_enabled
+                .then(|| "Qwen2.5 0.5B Q4_K_M".to_string()),
             active_profile_name: Some(profile.name),
             push_to_talk_shortcut: settings.push_to_talk_shortcut,
             session_type: self.capabilities.session_type,

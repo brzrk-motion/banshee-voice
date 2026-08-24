@@ -1,6 +1,7 @@
 param(
     [ValidateSet('tiny.en-q5_1', 'tiny.en', 'base.en', 'small.en', 'medium.en')]
-    [string]$WhisperModel = 'tiny.en-q5_1'
+    [string]$WhisperModel = 'base.en',
+    [switch]$WithCleanupModel
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,9 +21,21 @@ $url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$fileName"
 New-Item -ItemType Directory -Force -Path $modelsDirectory | Out-Null
 if (Test-Path -LiteralPath $outputPath) {
     Write-Host "Skipping existing file: $outputPath"
-    exit 0
+} else {
+    Write-Host "Downloading $WhisperModel to $outputPath"
+    Invoke-WebRequest -Uri $url -OutFile $outputPath
 }
-
-Write-Host "Downloading $WhisperModel to $outputPath"
-Invoke-WebRequest -Uri $url -OutFile $outputPath
 Write-Host "Whisper model: $outputPath"
+
+if ($WithCleanupModel) {
+    $cleanupDirectory = Join-Path $repositoryRoot 'models\llama'
+    $cleanupFile = 'Qwen2.5-0.5B-Instruct-Q4_K_M.gguf'
+    $cleanupPath = Join-Path $cleanupDirectory $cleanupFile
+    $cleanupUrl = "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/$cleanupFile"
+    New-Item -ItemType Directory -Force -Path $cleanupDirectory | Out-Null
+    if (-not (Test-Path -LiteralPath $cleanupPath)) {
+        Write-Host "Downloading cleanup model to $cleanupPath"
+        Invoke-WebRequest -Uri $cleanupUrl -OutFile $cleanupPath
+    }
+    Write-Host "Cleanup model: $cleanupPath"
+}

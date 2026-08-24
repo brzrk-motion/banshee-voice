@@ -7,13 +7,14 @@ use banshee_core::{
     pipeline::{PipelineServices, RecordingPipeline},
 };
 use banshee_injector::ClipboardInjector;
-use banshee_models::{ModelInstaller, ModelState, ModelStatus};
+use banshee_models::{ModelCapability, ModelInstaller, ModelState, ModelsStatus};
 use banshee_platform::EnvActiveWindowProvider;
 use banshee_platform::PlatformCapabilityProbe;
+use banshee_storage::SqliteDictionaryRepository;
 use banshee_storage::SqliteTranscriptionRepository;
 use banshee_storage::initialize_storage;
 use banshee_stt::WhisperCppEngine;
-use banshee_transformer::DeterministicCleanup;
+use banshee_transformer::TranscriptCleanup;
 use banshee_vad::SimpleVadProcessor;
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
@@ -42,9 +43,12 @@ impl RecordingRuntimeState {
 pub struct ManagedAppState {
     services: Arc<AppServices>,
     history: SqliteTranscriptionRepository,
+    dictionary: SqliteDictionaryRepository,
     recording: Arc<Mutex<RecordingRuntimeState>>,
-    model_installer: ModelInstaller,
+    speech_model_installer: ModelInstaller,
+    cleanup_model_installer: ModelInstaller,
     whisper_engine: WhisperCppEngine,
+    cleanup_engine: TranscriptCleanup,
 }
 
 impl ManagedAppState {
@@ -52,15 +56,18 @@ impl ManagedAppState {
         let storage = initialize_storage()?;
         let capabilities = PlatformCapabilityProbe::default().detect();
         let whisper_engine = WhisperCppEngine::default();
-        let model_installer = ModelInstaller::new(&storage.paths.data_dir);
+        let speech_model_installer = ModelInstaller::new(&storage.paths.data_dir);
+        let cleanup_model_installer = ModelInstaller::cleanup(&storage.paths.data_dir);
+        let cleanup_engine = TranscriptCleanup::default();
         let recording_pipeline = Arc::new(RecordingPipeline::new(PipelineServices {
             settings: Arc::new(storage.settings.clone()),
             profiles: Arc::new(storage.profiles.clone()),
+            dictionary: Arc::new(storage.dictionary.clone()),
             capabilities: capabilities.clone(),
             audio: Arc::new(CpalAudioCapture::default()),
             vad: Arc::new(SimpleVadProcessor),
             stt: Arc::new(whisper_engine.clone()),
-            cleanup: Arc::new(DeterministicCleanup),
+            cleanup: Arc::new(cleanup_engine.clone()),
             injector: Arc::new(ClipboardInjector),
             active_window: Arc::new(EnvActiveWindowProvider),
         }));
@@ -74,12 +81,15 @@ impl ManagedAppState {
                 recording_pipeline,
             )),
             history: storage.transcriptions.clone(),
+            dictionary: storage.dictionary.clone(),
             recording: Arc::new(Mutex::new(RecordingRuntimeState {
                 active_session: None,
                 snapshot: RecordingPipeline::idle_snapshot(),
             })),
-            model_installer,
+            speech_model_installer,
+            cleanup_model_installer,
             whisper_engine,
+            cleanup_engine,
         })
     }
 
@@ -95,21 +105,51 @@ impl ManagedAppState {
         &self.history
     }
 
-    pub fn model_status(&self) -> ModelStatus {
-        self.model_installer.status()
+    pub fn dictionary(&self) -> &SqliteDictionaryRepository {
+        &self.dictionary
+    }
+
+    pub fn models_status(&self) -> ModelsStatus {
+        ModelsStatus {
+            speech: self.speech_model_installer.status(),
+            cleanup: self.cleanup_model_installer.status(),
+        }
     }
 
     pub fn model_ready(&self) -> bool {
-        self.model_status().state == ModelState::Ready && self.whisper_engine.is_ready()
+        self.speech_model_installer.status().state == ModelState::Ready
+            && self.whisper_engine.is_ready()
     }
 
-    pub fn ensure_model(&self, app: tauri::AppHandle) {
+    pub fn ensure_speech_model(&self, app: tauri::AppHandle) {
         let engine = self.whisper_engine.clone();
-        self.model_installer.ensure_installed(
+        self.speech_model_installer.ensure_installed(
             move |status| {
                 let _ = app.emit("model_status_changed", status);
             },
             move |path| engine.load_model(path),
         );
+    }
+
+    pub fn ensure_cleanup_model(&self, app: tauri::AppHandle) {
+        self.cleanup_engine.enable();
+        let engine = self.cleanup_engine.clone();
+        self.cleanup_model_installer.ensure_installed(
+            move |status| {
+                let _ = app.emit("model_status_changed", status);
+            },
+            move |path| engine.load_model(path),
+        );
+    }
+
+    pub fn retry_model(&self, capability: ModelCapability, app: tauri::AppHandle) {
+        match capability {
+            ModelCapability::Speech => self.ensure_speech_model(app),
+            ModelCapability::Cleanup => self.ensure_cleanup_model(app),
+        }
+    }
+
+    pub fn disable_cleanup_model(&self) {
+        self.cleanup_engine.unload();
     }
 }

@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use crate::domain::{
     ActiveWindowProvider, AudioCapture, AudioCaptureRequest, AudioInputDevice, CleanupEngine,
-    CleanupRequest, HudState, HudStateChanged, OutputBackend, OutputRequest, PipelineRunResult,
-    PipelineRunStatus, PlatformCapabilities, ProfileStore, RecordingOrigin, RecordingSession,
-    RecordingSnapshot, RecordingState, SettingsStore, TranscriptionEngine, TranscriptionRequest,
-    VadProcessor,
+    CleanupRequest, DictionaryStore, HudState, HudStateChanged, OutputBackend, OutputRequest,
+    PipelineRunResult, PipelineRunStatus, PlatformCapabilities, ProfileStore, RecordingOrigin,
+    RecordingSession, RecordingSnapshot, RecordingState, SettingsStore, TranscriptionEngine,
+    TranscriptionRequest, VadProcessor,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -18,6 +18,7 @@ pub enum PipelineError {
 pub struct PipelineServices {
     pub settings: Arc<dyn SettingsStore>,
     pub profiles: Arc<dyn ProfileStore>,
+    pub dictionary: Arc<dyn DictionaryStore>,
     pub capabilities: PlatformCapabilities,
     pub audio: Arc<dyn AudioCapture>,
     pub vad: Arc<dyn VadProcessor>,
@@ -89,18 +90,24 @@ impl RecordingPipeline {
             return Err(anyhow!(PipelineError::NoSpeechDetected));
         }
 
+        let vocabulary = self.services.dictionary.list_global()?;
+
         let transcription = self.services.stt.transcribe(TranscriptionRequest {
             audio: vad_result.trimmed_audio.clone(),
             language: "en".to_string(),
             acceleration_preference: settings.acceleration_preference,
             latency_profile: "fast".to_string(),
-            selected_model_name: Some("tiny.en-q5_1".to_string()),
+            selected_model_name: Some("base.en".to_string()),
+            initial_prompt: Some(build_initial_prompt(&vocabulary)),
         })?;
 
         let profile_id = profile.id.clone();
         let cleanup = self.services.cleanup.cleanup(CleanupRequest {
             raw_text: transcription.raw_text.clone(),
             profile,
+            vocabulary,
+            llm_enabled: settings.cleanup_llm_enabled,
+            active_application: active_window.application_name.clone(),
         })?;
 
         let output = if session.origin == RecordingOrigin::PushToTalk {
@@ -127,6 +134,10 @@ impl RecordingPipeline {
             deterministic_text: cleanup.deterministic_text,
             final_text: cleanup.final_text,
             stt_backend: transcription.backend,
+            cleanup_backend: cleanup.backend,
+            stt_latency_ms: transcription.latency_ms,
+            cleanup_latency_ms: cleanup.latency_ms,
+            cleanup_fallback_reason: cleanup.fallback_reason,
             peak_level: vad_result.peak_level,
             status: if output.result == crate::domain::OutputResultKind::Success {
                 PipelineRunStatus::Completed
@@ -154,6 +165,25 @@ impl RecordingPipeline {
             last_error: None,
         }
     }
+}
+
+fn build_initial_prompt(vocabulary: &[crate::domain::DictionaryEntry]) -> String {
+    [
+        "Banshee",
+        "HUD",
+        "Codex",
+        "Claude Code",
+        "GitHub",
+        "Tauri",
+        "Rust",
+        "PowerShell",
+        "TypeScript",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .chain(vocabulary.iter().map(|entry| entry.output_form.clone()))
+    .collect::<Vec<_>>()
+    .join(", ")
 }
 
 #[cfg(test)]
@@ -192,6 +222,21 @@ mod tests {
                 description: String::new(),
                 built_in: true,
             })
+        }
+    }
+
+    struct TestDictionaryStore;
+
+    impl crate::domain::DictionaryStore for TestDictionaryStore {
+        fn list_global(&self) -> Result<Vec<crate::domain::DictionaryEntry>> {
+            Ok(Vec::new())
+        }
+
+        fn replace_global(
+            &self,
+            entries: Vec<crate::domain::DictionaryEntry>,
+        ) -> Result<Vec<crate::domain::DictionaryEntry>> {
+            Ok(entries)
         }
     }
 
@@ -269,6 +314,9 @@ mod tests {
             Ok(CleanupOutput {
                 deterministic_text: "ship it.".to_string(),
                 final_text: "ship it.".to_string(),
+                backend: "deterministic".to_string(),
+                latency_ms: 1,
+                fallback_reason: None,
             })
         }
     }
@@ -318,6 +366,7 @@ mod tests {
         RecordingPipeline::new(PipelineServices {
             settings: Arc::new(TestSettingsStore),
             profiles: Arc::new(TestProfileStore),
+            dictionary: Arc::new(TestDictionaryStore),
             capabilities: PlatformCapabilities {
                 session_type: SessionType::X11,
                 direct_injection: crate::domain::PlatformSupportTier::Native,
@@ -337,6 +386,16 @@ mod tests {
 
     fn pipeline(speech_detected: bool, result: OutputResultKind) -> RecordingPipeline {
         pipeline_with_counter(speech_detected, result, Arc::new(AtomicUsize::new(0)))
+    }
+
+    #[test]
+    fn initial_prompt_contains_built_in_and_custom_terms() {
+        let prompt = build_initial_prompt(&[crate::domain::DictionaryEntry {
+            spoken_form: "banci".into(),
+            output_form: "Banshee Voice".into(),
+        }]);
+        assert!(prompt.contains("HUD"));
+        assert!(prompt.contains("Banshee Voice"));
     }
 
     #[test]

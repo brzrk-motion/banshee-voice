@@ -6,7 +6,7 @@ import { HistoryPage } from "@/features/history/HistoryPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TranscribePage } from "@/features/transcribe/TranscribePage";
 import { errorMessage, run } from "@/lib/tauri";
-import type { AudioInputDevice, ModelStatus, PageId, RecordingResult, RecordingSnapshot, RecordingStateChanged, Settings } from "@/lib/types";
+import type { AudioInputDevice, DictionaryEntry, ModelStatus, ModelsStatus, PageId, RecordingResult, RecordingSnapshot, RecordingStateChanged, Settings } from "@/lib/types";
 
 export default function App() {
   const [page, setPage] = useState<PageId>("transcribe");
@@ -16,18 +16,24 @@ export default function App() {
   const [scratchText, setScratchText] = useState("");
   const [completedSessionId, setCompletedSessionId] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
-  const [modelStatus, setModelStatus] = useState<ModelStatus>({ state: "missing", modelName: "tiny.en-q5_1", downloadedBytes: 0 });
+  const [modelsStatus, setModelsStatus] = useState<ModelsStatus>({
+    speech: { capability: "speech", state: "missing", modelName: "base.en", downloadedBytes: 0 },
+    cleanup: { capability: "cleanup", state: "missing", modelName: "Qwen2.5-0.5B-Instruct-Q4_K_M", downloadedBytes: 0 },
+  });
+  const [vocabulary, setVocabulary] = useState<DictionaryEntry[]>([]);
 
   useEffect(() => {
     void Promise.all([
       run<Settings>("settings_get"),
       run<AudioInputDevice[]>("audio_list_input_devices"),
-      run<ModelStatus>("model_status_get"),
+      run<ModelsStatus>("models_status_get"),
+      run<DictionaryEntry[]>("dictionary_entries_get"),
       run<RecordingSnapshot>("recording_snapshot_get"),
-    ]).then(([loadedSettings, loadedDevices, loadedModelStatus, snapshot]) => {
+    ]).then(([loadedSettings, loadedDevices, loadedModelsStatus, loadedVocabulary, snapshot]) => {
       setSettings(loadedSettings);
       setDevices(loadedDevices);
-      setModelStatus(loadedModelStatus);
+      setModelsStatus(loadedModelsStatus);
+      setVocabulary(loadedVocabulary);
       setRecordingState(snapshot.state);
       if (snapshot.lastTranscript) setScratchText(snapshot.lastTranscript);
     }).catch((error) => toast.error("Banshee could not load", { description: errorMessage(error) }));
@@ -36,7 +42,7 @@ export default function App() {
     listen<RecordingStateChanged>("recording_state_changed", (event) => setRecordingState(event.payload.state))
       .then((unlisten) => { disposers.push(unlisten); })
       .catch(() => {});
-    listen<ModelStatus>("model_status_changed", (event) => setModelStatus(event.payload))
+    listen<ModelStatus>("model_status_changed", (event) => setModelsStatus((current) => ({ ...current, [event.payload.capability]: event.payload })))
       .then((unlisten) => { disposers.push(unlisten); })
       .catch(() => {});
     listen<RecordingResult>("transcription_completed", (event) => {
@@ -95,20 +101,22 @@ export default function App() {
     }
   }
 
-  async function retryModelDownload() {
-    setModelStatus((current) => ({ ...current, state: "missing", message: null }));
+  async function retryModelDownload(capability: ModelStatus["capability"]) {
+    setModelsStatus((current) => ({ ...current, [capability]: { ...current[capability], state: "missing", message: null } }));
     try {
-      await run("model_download_retry");
+      await run("model_download_retry", { capability });
     } catch (error) {
       toast.error("Model download could not start", { description: errorMessage(error) });
     }
   }
 
-  async function saveSettings(next: Settings) {
+  async function saveSettings(next: Settings, nextVocabulary: DictionaryEntry[]) {
     setSavingSettings(true);
     try {
+      const savedVocabulary = await run<DictionaryEntry[]>("dictionary_entries_replace", { entries: nextVocabulary });
       const saved = await run<Settings>("settings_update", { payload: next });
       setSettings(saved);
+      setVocabulary(savedVocabulary);
       toast.success("Settings saved");
     } catch (error) {
       toast.error("Settings were not saved", { description: errorMessage(error) });
@@ -126,16 +134,16 @@ export default function App() {
             onTextChange={setScratchText}
             recordingState={recordingState}
             completedSessionId={completedSessionId}
-            modelStatus={modelStatus}
+            modelStatus={modelsStatus.speech}
             onStart={startRecording}
             onStop={stopRecording}
             onCancel={cancelRecording}
             onCopy={copyText}
-            onRetryModel={retryModelDownload}
+            onRetryModel={() => retryModelDownload("speech")}
           />
         ) : null}
         {page === "history" ? <HistoryPage onCopy={copyText} /> : null}
-        {page === "settings" ? <SettingsPage settings={settings} devices={devices} saving={savingSettings} onSave={saveSettings} /> : null}
+        {page === "settings" ? <SettingsPage settings={settings} devices={devices} vocabulary={vocabulary} cleanupStatus={modelsStatus.cleanup} saving={savingSettings} onSave={saveSettings} onRetryCleanup={() => retryModelDownload("cleanup")} /> : null}
       </AppShell>
       <Toaster theme="dark" position="bottom-right" richColors closeButton />
     </>

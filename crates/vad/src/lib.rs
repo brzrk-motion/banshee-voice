@@ -22,8 +22,16 @@ impl VadProcessor for SimpleVadProcessor {
             }
         }
 
+        let padding_samples = (audio.sample_rate_hz as usize * 250 / 1_000)
+            .saturating_mul(usize::from(audio.channels.max(1)));
         let trimmed_samples = match (first, last) {
-            (Some(start), Some(end)) if end >= start => audio.samples[start..=end].to_vec(),
+            (Some(start), Some(end)) if end >= start => {
+                let padded_start = start.saturating_sub(padding_samples);
+                let padded_end = end
+                    .saturating_add(padding_samples)
+                    .min(audio.samples.len().saturating_sub(1));
+                audio.samples[padded_start..=padded_end].to_vec()
+            }
             _ => Vec::new(),
         };
 
@@ -73,7 +81,10 @@ mod tests {
         let result = processor.trim(audio, 0.5).expect("trim should succeed");
 
         assert!(result.speech_detected);
-        assert_eq!(result.trimmed_audio.samples, vec![0.03, 0.05, 0.04]);
+        assert_eq!(
+            result.trimmed_audio.samples,
+            vec![0.0, 0.0, 0.03, 0.05, 0.04, 0.0]
+        );
         assert_eq!(result.speech_start_ms, Some(2));
         assert_eq!(result.speech_end_ms, Some(4));
     }

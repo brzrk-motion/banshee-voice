@@ -7,7 +7,7 @@ MODELS_DIR="${ROOT_DIR}/models"
 WHISPER_DIR="${MODELS_DIR}/whisper"
 LLAMA_DIR="${MODELS_DIR}/llama"
 
-WHISPER_MODEL="tiny.en-q5_1"
+WHISPER_MODEL="base.en"
 FETCH_CLEANUP_MODEL=0
 CLEANUP_URL=""
 
@@ -19,7 +19,7 @@ Downloads local model files into ./models, which is gitignored.
 
 Options:
   --whisper-model <name>   Whisper preset: tiny.en-q5_1, tiny.en, base.en, small.en, medium.en
-                           Default: tiny.en-q5_1
+                           Default: base.en
   --with-cleanup-model     Also download a default llama.cpp-compatible cleanup model
   --cleanup-url <url>      Download a cleanup model from a custom URL instead
   -h, --help               Show this help text

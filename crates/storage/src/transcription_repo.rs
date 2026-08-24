@@ -36,8 +36,8 @@ impl SqliteTranscriptionRepository {
              ) VALUES (
                 ?1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
                 ?2, ?3, 0, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-                NULL, ?12, NULL, NULL, ?13, 'deterministic', ?14, ?14,
-                NULL, NULL, NULL, ?15, ?16, NULL, NULL
+                NULL, ?12, NULL, NULL, ?13, ?14, ?15, 'cpu',
+                ?16, ?17, ?18, ?19, ?20, NULL, ?21
              )",
             params![
                 result.session_id,
@@ -53,9 +53,14 @@ impl SqliteTranscriptionRepository {
                 result.session_type.as_str(),
                 result.profile_id,
                 result.stt_backend,
+                result.cleanup_backend,
                 encode_acceleration(result.acceleration_preference),
+                result.stt_latency_ms as i64,
+                result.cleanup_latency_ms as i64,
+                (result.stt_latency_ms + result.cleanup_latency_ms) as i64,
                 encode_output_method(result.output.method),
                 encode_output_result(result.output.result),
+                result.cleanup_fallback_reason,
             ],
         )?;
 
@@ -178,6 +183,10 @@ mod tests {
             deterministic_text: text.to_string(),
             final_text: text.to_string(),
             stt_backend: "test".to_string(),
+            cleanup_backend: "deterministic".to_string(),
+            stt_latency_ms: 10,
+            cleanup_latency_ms: 1,
+            cleanup_fallback_reason: None,
             peak_level: 0.5,
             status: PipelineRunStatus::Completed,
             output: OutputResponse {
@@ -217,6 +226,15 @@ mod tests {
             .expect("row should exist");
         assert_eq!(retained, 0);
         assert!(path.is_none());
+        let metadata: (String, i64, i64, String) = connection
+            .query_row(
+                "SELECT cleanup_backend, stt_latency_ms, cleanup_latency_ms, acceleration_actual
+                 FROM transcriptions WHERE id = 'session-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("processing metadata");
+        assert_eq!(metadata, ("deterministic".into(), 10, 1, "cpu".into()));
     }
 
     #[test]
