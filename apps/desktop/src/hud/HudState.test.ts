@@ -4,10 +4,10 @@ import { hudStateLabel, isHudVisible } from "./HudState";
 describe("HudState helpers", () => {
   it("treats hidden as not visible", () => {
     expect(isHudVisible({ state: "hidden" })).toBe(false);
-    expect(isHudVisible({ state: "listening" })).toBe(true);
+    expect(isHudVisible({ state: "recording" })).toBe(true);
   });
 
   it("formats state labels for display", () => {
-    expect(hudStateLabel({ state: "processing" })).toBe("processing");
+    expect(hudStateLabel({ state: "processing" })).toBe("Transcribing…");
   });
 });

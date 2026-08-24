@@ -1,8 +1,8 @@
 use crate::{
-    app_state::{ManagedAppState, RecordingTrigger},
-    commands::recording::{cancel_recording, start_recording_with_trigger, stop_recording},
+    app_state::ManagedAppState,
+    commands::recording::{start_recording_with_origin, stop_recording},
 };
-use banshee_core::domain::Settings;
+use banshee_core::domain::{RecordingOrigin, Settings};
 use std::{str::FromStr, sync::Mutex};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -14,8 +14,6 @@ pub struct HotkeyBindings {
 
 struct RegisteredHotkeys {
     push_to_talk: Shortcut,
-    toggle_recording: Shortcut,
-    cancel: Shortcut,
 }
 
 impl Copy for RegisteredHotkeys {}
@@ -31,15 +29,11 @@ impl RegisteredHotkeys {
         Ok(Self {
             push_to_talk: Shortcut::from_str(&settings.push_to_talk_shortcut)
                 .map_err(|error| format!("invalid push-to-talk shortcut: {error}"))?,
-            toggle_recording: Shortcut::from_str(&settings.toggle_recording_shortcut)
-                .map_err(|error| format!("invalid toggle shortcut: {error}"))?,
-            cancel: Shortcut::from_str(&settings.cancel_shortcut)
-                .map_err(|error| format!("invalid cancel shortcut: {error}"))?,
         })
     }
 
-    fn all(&self) -> [Shortcut; 3] {
-        [self.push_to_talk, self.toggle_recording, self.cancel]
+    fn all(&self) -> [Shortcut; 1] {
+        [self.push_to_talk]
     }
 }
 
@@ -93,15 +87,16 @@ pub fn handle_event(app: &AppHandle, shortcut: &Shortcut, state: ShortcutState) 
     if shortcut == &registered.push_to_talk {
         match state {
             ShortcutState::Pressed => {
-                let _ = start_recording_with_trigger(app, &app_state, RecordingTrigger::HoldToTalk);
+                let _ = start_recording_with_origin(app, &app_state, RecordingOrigin::PushToTalk);
             }
             ShortcutState::Released => {
                 let should_stop = app_state
                     .recording()
                     .lock()
                     .expect("recording mutex poisoned")
-                    .active_trigger
-                    == Some(RecordingTrigger::HoldToTalk);
+                    .active_session
+                    .as_ref()
+                    .is_some_and(|session| session.origin == RecordingOrigin::PushToTalk);
 
                 if should_stop {
                     stop_recording_in_background(app.clone());
@@ -109,26 +104,6 @@ pub fn handle_event(app: &AppHandle, shortcut: &Shortcut, state: ShortcutState) 
             }
         }
         return;
-    }
-
-    if shortcut == &registered.toggle_recording && matches!(state, ShortcutState::Pressed) {
-        let active = app_state
-            .recording()
-            .lock()
-            .expect("recording mutex poisoned")
-            .active_session
-            .is_some();
-
-        if active {
-            stop_recording_in_background(app.clone());
-        } else {
-            let _ = start_recording_with_trigger(app, &app_state, RecordingTrigger::Toggle);
-        }
-        return;
-    }
-
-    if shortcut == &registered.cancel && matches!(state, ShortcutState::Pressed) {
-        let _ = cancel_recording(app, &app_state);
     }
 }
 

@@ -62,10 +62,18 @@ pub enum RecordingState {
 #[serde(rename_all = "snake_case")]
 pub enum HudState {
     Hidden,
-    Listening,
+    Recording,
     Processing,
-    Complete,
+    Inserted,
+    Clipboard,
     Error,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingOrigin {
+    Scratch,
+    PushToTalk,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -271,10 +279,16 @@ pub struct PlatformCapabilities {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HudStateChanged {
+    pub session_id: Option<String>,
     pub state: HudState,
     pub message: Option<String>,
-    pub level: Option<f32>,
-    pub live_transcript: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioLevelChanged {
+    pub session_id: String,
+    pub level: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -306,6 +320,33 @@ pub struct AudioCaptureRequest {
 pub struct CaptureSession {
     pub id: String,
     pub device_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputTarget {
+    pub identity: String,
+    pub application_name: String,
+    pub window_title: String,
+    pub bounds: Option<ScreenRect>,
+    pub editable_verified: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingSession {
+    pub capture: CaptureSession,
+    pub origin: RecordingOrigin,
+    pub output_target: Option<OutputTarget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -370,6 +411,7 @@ pub struct ActiveWindowInfo {
 #[serde(rename_all = "camelCase")]
 pub struct OutputRequest {
     pub text: String,
+    pub target: Option<OutputTarget>,
     pub preserve_clipboard: bool,
     pub paste_delay_ms: i64,
     pub auto_paste_enabled: bool,
@@ -388,6 +430,7 @@ pub struct OutputResponse {
 #[serde(rename_all = "camelCase")]
 pub struct PipelineRunResult {
     pub session_id: String,
+    pub origin: RecordingOrigin,
     pub raw_text: String,
     pub deterministic_text: String,
     pub final_text: String,
@@ -445,6 +488,7 @@ pub trait AudioCapture: Send + Sync {
     fn start(&self, request: AudioCaptureRequest) -> anyhow::Result<CaptureSession>;
     fn stop(&self, session: &CaptureSession) -> anyhow::Result<CapturedAudio>;
     fn cancel(&self, session: &CaptureSession) -> anyhow::Result<()>;
+    fn current_level(&self, session: &CaptureSession) -> anyhow::Result<f32>;
 }
 
 pub trait VadProcessor: Send + Sync {
@@ -460,6 +504,7 @@ pub trait CleanupEngine: Send + Sync {
 }
 
 pub trait OutputBackend: Send + Sync {
+    fn capture_target(&self) -> anyhow::Result<Option<OutputTarget>>;
     fn insert_text(&self, request: OutputRequest) -> anyhow::Result<OutputResponse>;
 }
 

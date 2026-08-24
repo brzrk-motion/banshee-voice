@@ -40,10 +40,15 @@ export default function App() {
       .then((unlisten) => { disposers.push(unlisten); })
       .catch(() => {});
     listen<RecordingResult>("transcription_completed", (event) => {
-      setScratchText(event.payload.finalText);
-      setCompletedSessionId(event.payload.sessionId);
+      if (event.payload.origin === "scratch") {
+        setScratchText(event.payload.finalText);
+        setCompletedSessionId(event.payload.sessionId);
+      }
       setRecordingState("idle");
     }).then((unlisten) => { disposers.push(unlisten); }).catch(() => {});
+    listen<PageId>("navigate_to_page", (event) => setPage(event.payload))
+      .then((unlisten) => { disposers.push(unlisten); })
+      .catch(() => {});
     return () => disposers.forEach((dispose) => dispose());
   }, []);
 

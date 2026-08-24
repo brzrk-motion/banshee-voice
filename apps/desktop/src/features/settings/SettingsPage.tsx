@@ -49,7 +49,6 @@ export function SettingsPage({ settings, devices, saving, onSave }: Props) {
       <Card>
         <CardHeader><CardTitle>HUD</CardTitle><CardDescription>Control the compact recording overlay and its global shortcut.</CardDescription></CardHeader>
         <CardContent>
-          <SettingRow title="Show recording HUD" description="Display recording and processing state over other applications."><Switch aria-label="Show recording HUD" checked={draft.showHud} onCheckedChange={(value) => update("showHud", value)} /></SettingRow>
           <SettingRow title="Push-to-talk shortcut" description="Focus the field, then press the complete shortcut you want to use."><ShortcutCapture value={draft.pushToTalkShortcut} onChange={(value) => update("pushToTalkShortcut", value)} /></SettingRow>
         </CardContent>
       </Card>
@@ -57,9 +56,8 @@ export function SettingsPage({ settings, devices, saving, onSave }: Props) {
       <Card>
         <CardHeader><CardTitle>Output</CardTitle><CardDescription>Choose how HUD recordings hand text back to other applications.</CardDescription></CardHeader>
         <CardContent>
-          <SettingRow title="Auto-paste" description="Paste after a HUD recording when the platform supports it."><Switch aria-label="Auto-paste" checked={draft.autoPasteEnabled} onCheckedChange={(value) => update("autoPasteEnabled", value)} /></SettingRow>
           <SettingRow title="Preserve clipboard" description="Restore the previous clipboard when the output backend can do so."><Switch aria-label="Preserve clipboard" checked={draft.preserveClipboard} onCheckedChange={(value) => update("preserveClipboard", value)} /></SettingRow>
-          <SettingRow title="Paste delay" description="Wait before sending paste to the target application."><div className="relative"><Input aria-label="Paste delay" type="number" min={0} max={2000} value={draft.pasteDelayMs} onChange={(event) => update("pasteDelayMs", Number(event.target.value))} /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">ms</span></div></SettingRow>
+          <SettingRow title="Clipboard restore delay" description="Keep the transcript available briefly while the target consumes the paste."><div className="relative"><Input aria-label="Clipboard restore delay" type="number" min={0} max={2000} value={draft.pasteDelayMs} onChange={(event) => update("pasteDelayMs", Number(event.target.value))} /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">ms</span></div></SettingRow>
         </CardContent>
       </Card>
 
@@ -68,7 +66,6 @@ export function SettingsPage({ settings, devices, saving, onSave }: Props) {
         <CardContent>
           <SettingRow title="Launch at login" description="Start Banshee when you sign in."><Switch aria-label="Launch at login" checked={draft.launchAtLogin} onCheckedChange={(value) => update("launchAtLogin", value)} /></SettingRow>
           <SettingRow title="Start minimized" description="Open directly into the background."><Switch aria-label="Start minimized" checked={draft.startMinimized} onCheckedChange={(value) => update("startMinimized", value)} /></SettingRow>
-          <SettingRow title="Minimize to tray" description="Keep Banshee available after closing the main window."><Switch aria-label="Minimize to tray" checked={draft.minimizeToTray} onCheckedChange={(value) => update("minimizeToTray", value)} /></SettingRow>
           <SettingRow title="Start sound" description="Play a cue when recording begins."><Switch aria-label="Start sound" checked={draft.playStartSound} onCheckedChange={(value) => update("playStartSound", value)} /></SettingRow>
           <SettingRow title="Completion sound" description="Play a cue when transcription completes."><Switch aria-label="Completion sound" checked={draft.playCompletionSound} onCheckedChange={(value) => update("playCompletionSound", value)} /></SettingRow>
         </CardContent>
@@ -84,7 +81,7 @@ export function SettingsPage({ settings, devices, saving, onSave }: Props) {
       </Card>
 
       <div className="sticky bottom-0 z-10 flex justify-end border-t bg-background/95 px-6 py-4 backdrop-blur">
-        <Button disabled={!dirty || saving} onClick={() => void onSave(draft)}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}{saving ? "Saving…" : "Save changes"}</Button>
+        <Button disabled={!dirty || saving} onClick={() => void onSave(draft)}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}{saving ? "Saving..." : "Save changes"}</Button>
       </div>
     </div>
   );

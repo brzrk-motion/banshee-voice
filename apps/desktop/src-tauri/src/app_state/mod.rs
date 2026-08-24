@@ -3,7 +3,7 @@ pub mod ipc;
 use banshee_audio::CpalAudioCapture;
 use banshee_core::{
     AppServices,
-    domain::{CaptureSession, RecordingSnapshot},
+    domain::{RecordingSession, RecordingSnapshot},
     pipeline::{PipelineServices, RecordingPipeline},
 };
 use banshee_injector::ClipboardInjector;
@@ -19,37 +19,22 @@ use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 
 pub struct RecordingRuntimeState {
-    pub active_session: Option<CaptureSession>,
-    pub active_trigger: Option<RecordingTrigger>,
+    pub active_session: Option<RecordingSession>,
     pub snapshot: RecordingSnapshot,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecordingTrigger {
-    Manual,
-    HoldToTalk,
-    Toggle,
-}
-
 impl RecordingRuntimeState {
-    pub fn begin_session(
-        &mut self,
-        session: CaptureSession,
-        trigger: RecordingTrigger,
-    ) -> anyhow::Result<()> {
+    pub fn begin_session(&mut self, session: RecordingSession) -> anyhow::Result<()> {
         if self.active_session.is_some() {
             anyhow::bail!("a recording session is already active");
         }
 
         self.active_session = Some(session);
-        self.active_trigger = Some(trigger);
         Ok(())
     }
 
-    pub fn take_session(&mut self) -> Option<(CaptureSession, RecordingTrigger)> {
-        let session = self.active_session.take()?;
-        let trigger = self.active_trigger.take()?;
-        Some((session, trigger))
+    pub fn take_session(&mut self) -> Option<RecordingSession> {
+        self.active_session.take()
     }
 }
 
@@ -91,7 +76,6 @@ impl ManagedAppState {
             history: storage.transcriptions.clone(),
             recording: Arc::new(Mutex::new(RecordingRuntimeState {
                 active_session: None,
-                active_trigger: None,
                 snapshot: RecordingPipeline::idle_snapshot(),
             })),
             model_installer,

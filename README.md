@@ -1,6 +1,10 @@
 # Banshee Voice
 
-Banshee is a local Tauri desktop application that records microphone audio and transcribes it into an editable scratch space with Whisper `tiny.en-q5_1`.
+Banshee is a local Tauri desktop application that records microphone audio and transcribes it with Whisper `tiny.en-q5_1`.
+
+The desktop window includes an editable scratch space. Separately, the global push-to-talk shortcut opens a compact bottom-center HUD: hold the shortcut to record, then release it to transcribe and paste into the text field that was focused when recording began. If that target is unavailable or changed, Banshee leaves the transcript on the clipboard. Closing or minimizing the desktop window keeps Banshee available from the system tray; use the tray's Quit command to stop it.
+
+Target-aware paste uses Windows UI Automation, macOS Accessibility, and AT-SPI with XTest on X11. Wayland uses the safe clipboard fallback because it does not provide general-purpose global paste synthesis.
 
 ## Development prerequisites
 

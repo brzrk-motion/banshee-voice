@@ -1,8 +1,8 @@
 use banshee_core::domain::{
-    AccelerationPreference, AppError, AppErrorCode, AudioInputDevice, AudioRetentionPolicy,
-    DashboardSnapshot, FallbackUsed, HudState, HudStateChanged, OutputMethod, OutputResultKind,
-    PipelineRunStatus, RecordingState, RecordingStateChanged, SessionType, Settings,
-    SettingsUpdate,
+    AccelerationPreference, AppError, AppErrorCode, AudioInputDevice, AudioLevelChanged,
+    AudioRetentionPolicy, DashboardSnapshot, FallbackUsed, HudState, HudStateChanged, OutputMethod,
+    OutputResultKind, PipelineRunStatus, RecordingOrigin, RecordingState, RecordingStateChanged,
+    SessionType, Settings, SettingsUpdate,
 };
 use serde::{Deserialize, Serialize};
 
@@ -253,19 +253,33 @@ impl From<AudioInputDevice> for AudioInputDeviceDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HudStateChangedDto {
+    pub session_id: Option<String>,
     pub state: HudState,
     pub message: Option<String>,
-    pub level: Option<f32>,
-    pub live_transcript: Option<String>,
 }
 
 impl From<HudStateChanged> for HudStateChangedDto {
     fn from(value: HudStateChanged) -> Self {
         Self {
+            session_id: value.session_id,
             state: value.state,
             message: value.message,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioLevelChangedDto {
+    pub session_id: String,
+    pub level: f32,
+}
+
+impl From<AudioLevelChanged> for AudioLevelChangedDto {
+    fn from(value: AudioLevelChanged) -> Self {
+        Self {
+            session_id: value.session_id,
             level: value.level,
-            live_transcript: value.live_transcript,
         }
     }
 }
@@ -290,6 +304,7 @@ impl From<RecordingStateChanged> for RecordingStateChangedDto {
 #[serde(rename_all = "camelCase")]
 pub struct RecordingResultDto {
     pub session_id: String,
+    pub origin: RecordingOrigin,
     pub raw_text: String,
     pub deterministic_text: String,
     pub final_text: String,

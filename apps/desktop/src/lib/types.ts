@@ -3,20 +3,14 @@ export type PageId = "transcribe" | "history" | "settings";
 export type Settings = {
   launchAtLogin: boolean;
   startMinimized: boolean;
-  minimizeToTray: boolean;
-  showHud: boolean;
   playStartSound: boolean;
   playCompletionSound: boolean;
   microphoneDeviceId?: string | null;
   vadSensitivity: number;
   pushToTalkShortcut: string;
-  toggleRecordingShortcut: string;
-  cancelShortcut: string;
-  repastePreviousShortcut: string;
   accelerationPreference: "auto" | "cpu" | "gpu";
   historyEnabled: boolean;
   audioRetentionPolicy: "never" | "24_hours" | "forever";
-  autoPasteEnabled: boolean;
   preserveClipboard: boolean;
   pasteDelayMs: number;
   cleanupLlmEnabled: boolean;
@@ -33,6 +27,7 @@ export type AudioInputDevice = {
 export type RecordingResult = {
   sessionId: string;
   finalText: string;
+  origin: "scratch" | "push_to_talk";
 };
 
 export type ModelStatus = {

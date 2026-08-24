@@ -1,21 +1,22 @@
 use crate::{
     app_state::{
-        ManagedAppState, RecordingTrigger,
+        ManagedAppState,
         ipc::{AppErrorDto, RecordingResultDto},
     },
-    events::hud::emit_recording_state,
+    events::hud::{emit_audio_level, emit_hud_state, emit_recording_state},
 };
 use banshee_audio::AudioError;
 use banshee_core::{
     domain::{
-        AppError, AppErrorCode, FallbackUsed, HudState, HudStateChanged, RecordingState,
-        RecordingStateChanged,
+        AppError, AppErrorCode, AudioLevelChanged, FallbackUsed, HudState, HudStateChanged,
+        OutputMethod, RecordingOrigin, RecordingState, RecordingStateChanged,
     },
     pipeline::PipelineError,
 };
 use banshee_injector::InjectorError;
 use banshee_stt::SttError;
-use tauri::Emitter;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{Emitter, Manager};
 
 fn map_pipeline_error(error: anyhow::Error) -> AppError {
     if let Some(audio_error) = error.downcast_ref::<AudioError>() {
@@ -31,7 +32,6 @@ fn map_pipeline_error(error: anyhow::Error) -> AppError {
             fallback_used: Some(FallbackUsed::None),
         };
     }
-
     if let Some(stt_error) = error.downcast_ref::<SttError>() {
         return AppError {
             code: stt_error.code(),
@@ -40,7 +40,6 @@ fn map_pipeline_error(error: anyhow::Error) -> AppError {
             fallback_used: Some(FallbackUsed::None),
         };
     }
-
     if error.downcast_ref::<PipelineError>().is_some() {
         return AppError {
             code: AppErrorCode::NoSpeechDetected,
@@ -49,7 +48,6 @@ fn map_pipeline_error(error: anyhow::Error) -> AppError {
             fallback_used: Some(FallbackUsed::None),
         };
     }
-
     if error.downcast_ref::<InjectorError>().is_some() {
         return AppError {
             code: AppErrorCode::ClipboardFailed,
@@ -58,7 +56,6 @@ fn map_pipeline_error(error: anyhow::Error) -> AppError {
             fallback_used: Some(FallbackUsed::None),
         };
     }
-
     AppError {
         code: AppErrorCode::Unknown,
         message: error.to_string(),
@@ -67,19 +64,113 @@ fn map_pipeline_error(error: anyhow::Error) -> AppError {
     }
 }
 
-pub fn start_recording_with_trigger(
+fn transient_session_id() -> String {
+    format!(
+        "hud-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    )
+}
+
+fn schedule_hud_hide(app: tauri::AppHandle, session_id: String, delay_ms: u64) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        let state = app.state::<ManagedAppState>();
+        let should_hide = {
+            let mut recording = state.recording().lock().expect("recording mutex poisoned");
+            if recording.snapshot.hud.session_id.as_deref() == Some(session_id.as_str()) {
+                recording.snapshot.hud = HudStateChanged {
+                    session_id: Some(session_id.clone()),
+                    state: HudState::Hidden,
+                    message: None,
+                };
+                true
+            } else {
+                false
+            }
+        };
+        if should_hide {
+            let _ = emit_hud_state(
+                &app,
+                HudStateChanged {
+                    session_id: Some(session_id),
+                    state: HudState::Hidden,
+                    message: None,
+                },
+                None,
+            );
+        }
+    });
+}
+
+fn show_shortcut_error(app: &tauri::AppHandle, state: &ManagedAppState, message: String) {
+    let session_id = transient_session_id();
+    let payload = HudStateChanged {
+        session_id: Some(session_id.clone()),
+        state: HudState::Error,
+        message: Some(message),
+    };
+    state
+        .recording()
+        .lock()
+        .expect("recording mutex poisoned")
+        .snapshot
+        .hud = payload.clone();
+    let _ = emit_hud_state(app, payload, None);
+    schedule_hud_hide(app.clone(), session_id, 2_500);
+}
+
+fn start_level_pump(app: tauri::AppHandle, session_id: String) {
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(33));
+        loop {
+            interval.tick().await;
+            let state = app.state::<ManagedAppState>();
+            let session = state
+                .recording()
+                .lock()
+                .expect("recording mutex poisoned")
+                .active_session
+                .as_ref()
+                .filter(|session| session.capture.id == session_id)
+                .cloned();
+            let Some(session) = session else {
+                break;
+            };
+            let level = state
+                .services()
+                .recording_pipeline()
+                .current_level(&session)
+                .unwrap_or(0.0);
+            let _ = emit_audio_level(
+                &app,
+                AudioLevelChanged {
+                    session_id: session_id.clone(),
+                    level,
+                },
+            );
+        }
+    });
+}
+
+pub fn start_recording_with_origin(
     app: &tauri::AppHandle,
     state: &ManagedAppState,
-    trigger: RecordingTrigger,
+    origin: RecordingOrigin,
 ) -> Result<(), AppErrorDto> {
     if !state.model_ready() {
-        return Err(AppError {
+        let error = AppError {
             code: AppErrorCode::ModelMissing,
             message: "The speech model is still downloading or loading.".to_string(),
             recoverable: true,
             fallback_used: Some(FallbackUsed::None),
+        };
+        if origin == RecordingOrigin::PushToTalk {
+            show_shortcut_error(app, state, error.message.clone());
         }
-        .into());
+        return Err(error.into());
     }
     if state
         .recording()
@@ -93,24 +184,40 @@ pub fn start_recording_with_trigger(
         ));
     }
 
-    let session = state
-        .services()
-        .recording_pipeline()
-        .start_manual()
-        .map_err(map_pipeline_error)
-        .map_err(AppErrorDto::from)?;
+    let session = match state.services().recording_pipeline().start(origin) {
+        Ok(session) => session,
+        Err(error) => {
+            let error = map_pipeline_error(error);
+            if origin == RecordingOrigin::PushToTalk {
+                show_shortcut_error(app, state, error.message.clone());
+            }
+            return Err(error.into());
+        }
+    };
+    let session_id = session.capture.id.clone();
+    let target_bounds = session
+        .output_target
+        .as_ref()
+        .and_then(|target| target.bounds);
 
     {
         let mut recording = state.recording().lock().expect("recording mutex poisoned");
         recording
-            .begin_session(session, trigger)
+            .begin_session(session)
             .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
         recording.snapshot.state = RecordingState::Recording;
-        recording.snapshot.hud = HudStateChanged {
-            state: HudState::Listening,
-            message: Some("Listening for dictation".to_string()),
-            level: Some(0.0),
-            live_transcript: None,
+        recording.snapshot.hud = if origin == RecordingOrigin::PushToTalk {
+            HudStateChanged {
+                session_id: Some(session_id.clone()),
+                state: HudState::Recording,
+                message: None,
+            }
+        } else {
+            HudStateChanged {
+                session_id: None,
+                state: HudState::Hidden,
+                message: None,
+            }
         };
         recording.snapshot.last_error = None;
     }
@@ -123,6 +230,19 @@ pub fn start_recording_with_trigger(
         },
     )
     .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
+    if origin == RecordingOrigin::PushToTalk {
+        emit_hud_state(
+            app,
+            HudStateChanged {
+                session_id: Some(session_id.clone()),
+                state: HudState::Recording,
+                message: None,
+            },
+            target_bounds,
+        )
+        .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
+        start_level_pump(app.clone(), session_id);
+    }
     Ok(())
 }
 
@@ -130,14 +250,29 @@ pub fn stop_recording(
     app: &tauri::AppHandle,
     state: &ManagedAppState,
 ) -> Result<RecordingResultDto, AppErrorDto> {
-    {
+    let (origin, session_id, target_bounds) = {
         let mut recording = state.recording().lock().expect("recording mutex poisoned");
-        let Some(session) = recording.active_session.clone() else {
+        let Some(session) = recording.active_session.as_ref() else {
             return Err(AppErrorDto::unknown("no active recording session"));
         };
+        let values = (
+            session.origin,
+            session.capture.id.clone(),
+            session
+                .output_target
+                .as_ref()
+                .and_then(|target| target.bounds),
+        );
         recording.snapshot.state = RecordingState::Stopping;
-        let _ = session;
-    }
+        if values.0 == RecordingOrigin::PushToTalk {
+            recording.snapshot.hud = HudStateChanged {
+                session_id: Some(values.1.clone()),
+                state: HudState::Processing,
+                message: Some("Transcribing...".to_string()),
+            };
+        }
+        values
+    };
 
     emit_recording_state(
         app,
@@ -147,6 +282,18 @@ pub fn stop_recording(
         },
     )
     .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
+    if origin == RecordingOrigin::PushToTalk {
+        emit_hud_state(
+            app,
+            HudStateChanged {
+                session_id: Some(session_id.clone()),
+                state: HudState::Processing,
+                message: Some("Transcribing...".to_string()),
+            },
+            target_bounds,
+        )
+        .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
+    }
     emit_recording_state(
         app,
         RecordingStateChanged {
@@ -156,20 +303,21 @@ pub fn stop_recording(
     )
     .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
 
-    let (session, _trigger) = {
-        let mut recording = state.recording().lock().expect("recording mutex poisoned");
-        recording.take_session()
-    }
-    .ok_or_else(|| AppErrorDto::unknown("no active recording session"))?;
+    let session = state
+        .recording()
+        .lock()
+        .expect("recording mutex poisoned")
+        .take_session()
+        .ok_or_else(|| AppErrorDto::unknown("no active recording session"))?;
 
-    match state.services().recording_pipeline().stop(&session, false) {
+    match state.services().recording_pipeline().stop(&session) {
         Ok(result) => {
-            let history_enabled = state
+            if state
                 .services()
                 .settings()
                 .map_err(|error| AppErrorDto::unknown(error.to_string()))?
-                .history_enabled;
-            if history_enabled {
+                .history_enabled
+            {
                 state
                     .history()
                     .insert_completed(&result)
@@ -179,6 +327,7 @@ pub fn stop_recording(
             }
             let dto = RecordingResultDto {
                 session_id: result.session_id.clone(),
+                origin: result.origin,
                 raw_text: result.raw_text.clone(),
                 deterministic_text: result.deterministic_text.clone(),
                 final_text: result.final_text.clone(),
@@ -192,18 +341,26 @@ pub fn stop_recording(
                 window_title: result.active_window.window_title.clone(),
                 duration_ms: result.duration_ms,
             };
+            let hud_state = if result.output.method == OutputMethod::ClipboardCopyOnly {
+                HudState::Clipboard
+            } else {
+                HudState::Inserted
+            };
 
             {
                 let mut recording = state.recording().lock().expect("recording mutex poisoned");
                 recording.snapshot.state = RecordingState::Idle;
-                recording.snapshot.last_transcript = Some(result.final_text.clone());
+                if origin == RecordingOrigin::Scratch {
+                    recording.snapshot.last_transcript = Some(result.final_text.clone());
+                }
                 recording.snapshot.last_error = None;
-                recording.snapshot.hud = HudStateChanged {
-                    state: HudState::Complete,
-                    message: Some(result.output.message.clone()),
-                    level: Some(result.peak_level),
-                    live_transcript: Some(result.final_text.clone()),
-                };
+                if origin == RecordingOrigin::PushToTalk {
+                    recording.snapshot.hud = HudStateChanged {
+                        session_id: Some(session_id.clone()),
+                        state: hud_state,
+                        message: Some(result.output.message.clone()),
+                    };
+                }
             }
 
             emit_recording_state(
@@ -217,6 +374,27 @@ pub fn stop_recording(
             app.emit("transcription_completed", dto.clone())
                 .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
 
+            if origin == RecordingOrigin::PushToTalk {
+                emit_hud_state(
+                    app,
+                    HudStateChanged {
+                        session_id: Some(session_id.clone()),
+                        state: hud_state,
+                        message: Some(result.output.message.clone()),
+                    },
+                    target_bounds,
+                )
+                .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
+                schedule_hud_hide(
+                    app.clone(),
+                    session_id,
+                    if hud_state == HudState::Inserted {
+                        1_200
+                    } else {
+                        2_500
+                    },
+                );
+            }
             Ok(dto)
         }
         Err(error) => {
@@ -225,12 +403,13 @@ pub fn stop_recording(
                 let mut recording = state.recording().lock().expect("recording mutex poisoned");
                 recording.snapshot.state = RecordingState::Error;
                 recording.snapshot.last_error = Some(app_error.clone());
-                recording.snapshot.hud = HudStateChanged {
-                    state: HudState::Error,
-                    message: Some(app_error.message.clone()),
-                    level: None,
-                    live_transcript: None,
-                };
+                if origin == RecordingOrigin::PushToTalk {
+                    recording.snapshot.hud = HudStateChanged {
+                        session_id: Some(session_id.clone()),
+                        state: HudState::Error,
+                        message: Some(app_error.message.clone()),
+                    };
+                }
             }
             emit_recording_state(
                 app,
@@ -240,6 +419,19 @@ pub fn stop_recording(
                 },
             )
             .map_err(|emit_error| AppErrorDto::unknown(emit_error.to_string()))?;
+            if origin == RecordingOrigin::PushToTalk {
+                emit_hud_state(
+                    app,
+                    HudStateChanged {
+                        session_id: Some(session_id.clone()),
+                        state: HudState::Error,
+                        message: Some(app_error.message.clone()),
+                    },
+                    target_bounds,
+                )
+                .map_err(|emit_error| AppErrorDto::unknown(emit_error.to_string()))?;
+                schedule_hud_hide(app.clone(), session_id, 2_500);
+            }
             Err(app_error.into())
         }
     }
@@ -249,30 +441,42 @@ pub fn cancel_recording(
     app: &tauri::AppHandle,
     state: &ManagedAppState,
 ) -> Result<(), AppErrorDto> {
-    let active_session = {
-        let recording = state.recording().lock().expect("recording mutex poisoned");
-        recording.active_session.clone()
-    };
-
-    if let Some(session) = active_session {
+    let session = state
+        .recording()
+        .lock()
+        .expect("recording mutex poisoned")
+        .active_session
+        .clone();
+    if let Some(session) = session {
         state
             .services()
             .recording_pipeline()
             .cancel(&session)
             .map_err(map_pipeline_error)
             .map_err(AppErrorDto::from)?;
-
-        let mut recording = state.recording().lock().expect("recording mutex poisoned");
-        recording.snapshot.state = RecordingState::Idle;
-        recording.snapshot.hud = HudStateChanged {
-            state: HudState::Hidden,
-            message: None,
-            level: None,
-            live_transcript: None,
-        };
-        let _ = recording.take_session();
+        {
+            let mut recording = state.recording().lock().expect("recording mutex poisoned");
+            recording.snapshot.state = RecordingState::Idle;
+            recording.snapshot.hud = HudStateChanged {
+                session_id: Some(session.capture.id.clone()),
+                state: HudState::Hidden,
+                message: None,
+            };
+            let _ = recording.take_session();
+        }
+        if session.origin == RecordingOrigin::PushToTalk {
+            emit_hud_state(
+                app,
+                HudStateChanged {
+                    session_id: Some(session.capture.id),
+                    state: HudState::Hidden,
+                    message: None,
+                },
+                None,
+            )
+            .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
+        }
     }
-
     emit_recording_state(
         app,
         RecordingStateChanged {
@@ -280,8 +484,7 @@ pub fn cancel_recording(
             transcription_id: None,
         },
     )
-    .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
-    Ok(())
+    .map_err(|error| AppErrorDto::unknown(error.to_string()))
 }
 
 #[tauri::command]
@@ -289,7 +492,7 @@ pub fn recording_start_manual(
     app: tauri::AppHandle,
     state: tauri::State<'_, ManagedAppState>,
 ) -> Result<(), AppErrorDto> {
-    start_recording_with_trigger(&app, &state, RecordingTrigger::Manual)
+    start_recording_with_origin(&app, &state, RecordingOrigin::Scratch)
 }
 
 #[tauri::command]

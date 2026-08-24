@@ -141,3 +141,47 @@ pub struct StorageRuntime {
     pub profiles: SqliteProfileRepository,
     pub transcriptions: SqliteTranscriptionRepository,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hud_background_migration_normalizes_existing_preferences() {
+        let mut connection = Connection::open_in_memory().expect("database should open");
+        migrate(&mut connection).expect("migrations should apply");
+        connection
+            .execute(
+                "INSERT INTO settings (
+                    id, push_to_talk_shortcut, toggle_recording_shortcut, cancel_shortcut,
+                    repaste_previous_shortcut, acceleration_preference, audio_retention_policy,
+                    show_hud, minimize_to_tray, auto_paste_enabled
+                 ) VALUES (
+                    1, 'Ctrl+Shift+Space', 'Ctrl+Shift+R', 'Escape', 'Ctrl+Shift+V',
+                    'auto', 'never', 0, 0, 0
+                 )",
+                [],
+            )
+            .expect("legacy settings should insert");
+        connection
+            .execute("DELETE FROM schema_migrations WHERE version = 2", [])
+            .expect("migration marker should reset");
+
+        migrate(&mut connection).expect("HUD migration should reapply");
+
+        let values = connection
+            .query_row(
+                "SELECT show_hud, minimize_to_tray, auto_paste_enabled FROM settings WHERE id = 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, bool>(0)?,
+                        row.get::<_, bool>(1)?,
+                        row.get::<_, bool>(2)?,
+                    ))
+                },
+            )
+            .expect("settings should load");
+        assert_eq!(values, (true, true, true));
+    }
+}

@@ -2,10 +2,11 @@ use anyhow::{Result, anyhow};
 use std::sync::Arc;
 
 use crate::domain::{
-    ActiveWindowProvider, AudioCapture, AudioCaptureRequest, AudioInputDevice, CaptureSession,
-    CleanupEngine, CleanupRequest, HudState, HudStateChanged, OutputBackend, OutputRequest,
-    PipelineRunResult, PipelineRunStatus, PlatformCapabilities, ProfileStore, RecordingSnapshot,
-    RecordingState, SettingsStore, TranscriptionEngine, TranscriptionRequest, VadProcessor,
+    ActiveWindowProvider, AudioCapture, AudioCaptureRequest, AudioInputDevice, CleanupEngine,
+    CleanupRequest, HudState, HudStateChanged, OutputBackend, OutputRequest, PipelineRunResult,
+    PipelineRunStatus, PlatformCapabilities, ProfileStore, RecordingOrigin, RecordingSession,
+    RecordingSnapshot, RecordingState, SettingsStore, TranscriptionEngine, TranscriptionRequest,
+    VadProcessor,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -39,32 +40,46 @@ impl RecordingPipeline {
         self.services.audio.list_input_devices()
     }
 
-    pub fn start_manual(&self) -> Result<CaptureSession> {
+    pub fn start(&self, origin: RecordingOrigin) -> Result<RecordingSession> {
         let settings = self.services.settings.load()?;
-        self.services.audio.start(AudioCaptureRequest {
+        let capture = self.services.audio.start(AudioCaptureRequest {
             device_id: settings.microphone_device_id,
             channels: 1,
             sample_rate_hz: 16_000,
+        })?;
+        let output_target = if origin == RecordingOrigin::PushToTalk {
+            self.services.injector.capture_target().unwrap_or(None)
+        } else {
+            None
+        };
+        Ok(RecordingSession {
+            capture,
+            origin,
+            output_target,
         })
     }
 
-    pub fn cancel(&self, session: &CaptureSession) -> Result<()> {
-        self.services.audio.cancel(session)
+    pub fn current_level(&self, session: &RecordingSession) -> Result<f32> {
+        self.services.audio.current_level(&session.capture)
     }
 
-    pub fn stop_manual(&self, session: &CaptureSession) -> Result<PipelineRunResult> {
-        self.stop(session, true)
+    pub fn cancel(&self, session: &RecordingSession) -> Result<()> {
+        self.services.audio.cancel(&session.capture)
     }
 
-    pub fn stop(
-        &self,
-        session: &CaptureSession,
-        perform_output: bool,
-    ) -> Result<PipelineRunResult> {
+    pub fn stop(&self, session: &RecordingSession) -> Result<PipelineRunResult> {
         let settings = self.services.settings.load()?;
         let profile = self.services.profiles.default_profile()?;
-        let active_window = self.services.active_window.active_window()?;
-        let captured_audio = self.services.audio.stop(session)?;
+        let active_window = session
+            .output_target
+            .as_ref()
+            .map(|target| crate::domain::ActiveWindowInfo {
+                application_name: target.application_name.clone(),
+                window_title: target.window_title.clone(),
+            })
+            .map(Ok)
+            .unwrap_or_else(|| self.services.active_window.active_window())?;
+        let captured_audio = self.services.audio.stop(&session.capture)?;
         let vad_result = self
             .services
             .vad
@@ -88,12 +103,13 @@ impl RecordingPipeline {
             profile,
         })?;
 
-        let output = if perform_output {
+        let output = if session.origin == RecordingOrigin::PushToTalk {
             self.services.injector.insert_text(OutputRequest {
                 text: cleanup.final_text.clone(),
+                target: session.output_target.clone(),
                 preserve_clipboard: settings.preserve_clipboard,
                 paste_delay_ms: settings.paste_delay_ms,
-                auto_paste_enabled: settings.auto_paste_enabled,
+                auto_paste_enabled: true,
                 session_type: self.services.capabilities.session_type,
             })?
         } else {
@@ -105,7 +121,8 @@ impl RecordingPipeline {
         };
 
         Ok(PipelineRunResult {
-            session_id: session.id.clone(),
+            session_id: session.capture.id.clone(),
+            origin: session.origin,
             raw_text: transcription.raw_text,
             deterministic_text: cleanup.deterministic_text,
             final_text: cleanup.final_text,
@@ -129,10 +146,9 @@ impl RecordingPipeline {
         RecordingSnapshot {
             state: RecordingState::Idle,
             hud: HudStateChanged {
+                session_id: None,
                 state: HudState::Hidden,
                 message: None,
-                level: None,
-                live_transcript: None,
             },
             last_transcript: None,
             last_error: None,
@@ -144,8 +160,8 @@ impl RecordingPipeline {
 mod tests {
     use super::*;
     use crate::domain::{
-        ActiveWindowInfo, CleanupOutput, OutputMethod, OutputResponse, OutputResultKind,
-        ProfileSummary, SessionType, Settings,
+        ActiveWindowInfo, CaptureSession, CleanupOutput, OutputMethod, OutputResponse,
+        OutputResultKind, ProfileSummary, SessionType, Settings,
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -205,6 +221,10 @@ mod tests {
         fn cancel(&self, _session: &CaptureSession) -> Result<()> {
             Ok(())
         }
+
+        fn current_level(&self, _session: &CaptureSession) -> Result<f32> {
+            Ok(0.25)
+        }
     }
 
     struct TestVad {
@@ -259,6 +279,16 @@ mod tests {
     }
 
     impl OutputBackend for TestOutputBackend {
+        fn capture_target(&self) -> Result<Option<crate::domain::OutputTarget>> {
+            Ok(Some(crate::domain::OutputTarget {
+                identity: "target-1".to_string(),
+                application_name: "Editor".to_string(),
+                window_title: "main.rs".to_string(),
+                bounds: None,
+                editable_verified: true,
+            }))
+        }
+
         fn insert_text(&self, _request: OutputRequest) -> Result<OutputResponse> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(OutputResponse {
@@ -312,11 +342,11 @@ mod tests {
     #[test]
     fn returns_fallback_status_when_output_falls_back() {
         let pipeline = pipeline(true, OutputResultKind::Fallback);
-        let session = pipeline.start_manual().expect("session should start");
+        let session = pipeline
+            .start(RecordingOrigin::PushToTalk)
+            .expect("session should start");
 
-        let result = pipeline
-            .stop_manual(&session)
-            .expect("pipeline should succeed");
+        let result = pipeline.stop(&session).expect("pipeline should succeed");
 
         assert_eq!(result.status, PipelineRunStatus::FallbackUsed);
         assert_eq!(result.session_id, "session-1");
@@ -326,9 +356,11 @@ mod tests {
     #[test]
     fn rejects_no_speech_runs() {
         let pipeline = pipeline(false, OutputResultKind::Success);
-        let session = pipeline.start_manual().expect("session should start");
+        let session = pipeline
+            .start(RecordingOrigin::PushToTalk)
+            .expect("session should start");
         let error = pipeline
-            .stop_manual(&session)
+            .stop(&session)
             .expect_err("no-speech runs should fail");
 
         assert!(error.to_string().contains("no speech detected"));
@@ -338,11 +370,11 @@ mod tests {
     fn scratch_space_runs_skip_output_injection() {
         let calls = Arc::new(AtomicUsize::new(0));
         let pipeline = pipeline_with_counter(true, OutputResultKind::Success, calls.clone());
-        let session = pipeline.start_manual().expect("session should start");
+        let session = pipeline
+            .start(RecordingOrigin::Scratch)
+            .expect("session should start");
 
-        let result = pipeline
-            .stop(&session, false)
-            .expect("pipeline should succeed");
+        let result = pipeline.stop(&session).expect("pipeline should succeed");
 
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert_eq!(result.output.method, OutputMethod::None);

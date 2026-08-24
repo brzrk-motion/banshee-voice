@@ -25,9 +25,10 @@ fn main() {
             )?;
 
             let state = app_state::ManagedAppState::initialize().map_err(setup_error)?;
-            tray::initialize(app.handle())?;
             app.manage(hotkeys::HotkeyBindings::default());
             app.manage(state);
+            windows::register(app.handle())?;
+            tray::initialize(app.handle())?;
             app.state::<app_state::ManagedAppState>()
                 .ensure_model(app.handle().clone());
             let settings = app
@@ -37,7 +38,27 @@ fn main() {
                 .map_err(setup_error)?;
             hotkeys::sync(app.handle(), &settings)
                 .map_err(|error| setup_error(anyhow::anyhow!(error)))?;
+            if !settings.start_minimized {
+                if let Some(window) = app.get_webview_window(windows::MAIN_WINDOW_LABEL) {
+                    window.show()?;
+                }
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() != windows::MAIN_WINDOW_LABEL {
+                return;
+            }
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                tauri::WindowEvent::Resized(_) if window.is_minimized().unwrap_or(false) => {
+                    let _ = window.hide();
+                }
+                _ => {}
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::app_get_dashboard,

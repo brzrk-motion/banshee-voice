@@ -158,7 +158,7 @@ fn encode_output_result(value: OutputResultKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use banshee_core::domain::{ActiveWindowInfo, OutputResponse, SessionType};
+    use banshee_core::domain::{ActiveWindowInfo, OutputResponse, RecordingOrigin, SessionType};
 
     fn repository() -> SqliteTranscriptionRepository {
         let mut connection = Connection::open_in_memory().expect("database should open");
@@ -173,6 +173,7 @@ mod tests {
     fn result(id: &str, text: &str) -> PipelineRunResult {
         PipelineRunResult {
             session_id: id.to_string(),
+            origin: RecordingOrigin::Scratch,
             raw_text: text.to_string(),
             deterministic_text: text.to_string(),
             final_text: text.to_string(),

@@ -1,4 +1,5 @@
 use banshee_core::domain::{PlatformCapabilities, PlatformSupportTier, SessionType};
+#[cfg(target_os = "linux")]
 use std::env;
 
 #[derive(Debug, Default, Clone, Copy)]

@@ -7,7 +7,10 @@ use banshee_core::domain::{
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU32, Ordering},
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
@@ -30,8 +33,30 @@ struct ActiveSession {
     _stream: Stream,
     samples: Arc<Mutex<Vec<f32>>>,
     stream_error: Arc<Mutex<Option<String>>>,
+    level_bits: Arc<AtomicU32>,
     sample_rate_hz: u32,
     channels: u16,
+}
+
+fn append_and_measure(
+    samples: &Arc<Mutex<Vec<f32>>>,
+    level_bits: &Arc<AtomicU32>,
+    values: impl IntoIterator<Item = f32>,
+) {
+    let mut buffer = samples.lock().expect("audio buffer mutex poisoned");
+    let mut sum_squares = 0.0_f32;
+    let mut count = 0_u32;
+    for value in values {
+        buffer.push(value);
+        sum_squares += value * value;
+        count += 1;
+    }
+    let rms = if count == 0 {
+        0.0
+    } else {
+        (sum_squares / count as f32).sqrt().clamp(0.0, 1.0)
+    };
+    level_bits.store(rms.to_bits(), Ordering::Relaxed);
 }
 
 fn input_devices() -> Result<Vec<cpal::Device>> {
@@ -96,6 +121,7 @@ fn build_stream(
     supported: &cpal::SupportedStreamConfig,
     samples: Arc<Mutex<Vec<f32>>>,
     stream_error: Arc<Mutex<Option<String>>>,
+    level_bits: Arc<AtomicU32>,
 ) -> Result<Stream> {
     let config: StreamConfig = supported.clone().into();
     let on_error = move |error: cpal::StreamError| {
@@ -104,22 +130,18 @@ fn build_stream(
     let stream = match supported.sample_format() {
         SampleFormat::F32 => device.build_input_stream(
             &config,
-            move |data: &[f32], _| {
-                samples
-                    .lock()
-                    .expect("audio buffer mutex poisoned")
-                    .extend_from_slice(data)
-            },
+            move |data: &[f32], _| append_and_measure(&samples, &level_bits, data.iter().copied()),
             on_error,
             None,
         ),
         SampleFormat::I16 => device.build_input_stream(
             &config,
             move |data: &[i16], _| {
-                samples
-                    .lock()
-                    .expect("audio buffer mutex poisoned")
-                    .extend(data.iter().map(|sample| *sample as f32 / i16::MAX as f32));
+                append_and_measure(
+                    &samples,
+                    &level_bits,
+                    data.iter().map(|sample| *sample as f32 / i16::MAX as f32),
+                );
             },
             on_error,
             None,
@@ -127,7 +149,9 @@ fn build_stream(
         SampleFormat::U16 => device.build_input_stream(
             &config,
             move |data: &[u16], _| {
-                samples.lock().expect("audio buffer mutex poisoned").extend(
+                append_and_measure(
+                    &samples,
+                    &level_bits,
                     data.iter()
                         .map(|sample| (*sample as f32 / u16::MAX as f32) * 2.0 - 1.0),
                 );
@@ -174,7 +198,14 @@ impl AudioCapture for CpalAudioCapture {
         let supported = device.default_input_config().map_err(map_device_error)?;
         let samples = Arc::new(Mutex::new(Vec::new()));
         let stream_error = Arc::new(Mutex::new(None));
-        let stream = build_stream(&device, &supported, samples.clone(), stream_error.clone())?;
+        let level_bits = Arc::new(AtomicU32::new(0.0_f32.to_bits()));
+        let stream = build_stream(
+            &device,
+            &supported,
+            samples.clone(),
+            stream_error.clone(),
+            level_bits.clone(),
+        )?;
         stream.play().map_err(map_device_error)?;
         let session = CaptureSession {
             id: format!(
@@ -192,6 +223,7 @@ impl AudioCapture for CpalAudioCapture {
                     _stream: stream,
                     samples,
                     stream_error,
+                    level_bits,
                     sample_rate_hz: supported.sample_rate().0,
                     channels: supported.channels(),
                 },
@@ -234,6 +266,14 @@ impl AudioCapture for CpalAudioCapture {
             .remove(&session.id);
         Ok(())
     }
+
+    fn current_level(&self, session: &CaptureSession) -> Result<f32> {
+        let sessions = self.sessions.lock().expect("audio sessions mutex poisoned");
+        let active = sessions
+            .get(&session.id)
+            .ok_or_else(|| anyhow!("unknown capture session"))?;
+        Ok(f32::from_bits(active.level_bits.load(Ordering::Relaxed)).clamp(0.0, 1.0))
+    }
 }
 
 #[cfg(test)]
@@ -251,5 +291,16 @@ mod tests {
             resample_linear(&vec![0.0; 48_000], 48_000, 16_000).len(),
             16_000
         );
+    }
+
+    #[test]
+    fn publishes_normalized_rms_for_the_hud() {
+        let samples = Arc::new(Mutex::new(Vec::new()));
+        let level_bits = Arc::new(AtomicU32::new(0.0_f32.to_bits()));
+
+        append_and_measure(&samples, &level_bits, [0.5, -0.5, 0.5, -0.5]);
+
+        assert_eq!(samples.lock().expect("samples").len(), 4);
+        assert!((f32::from_bits(level_bits.load(Ordering::Relaxed)) - 0.5).abs() < f32::EPSILON);
     }
 }
