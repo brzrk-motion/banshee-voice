@@ -15,6 +15,7 @@ use banshee_core::{
 };
 use banshee_injector::InjectorError;
 use banshee_stt::SttError;
+use tauri::Emitter;
 
 fn map_pipeline_error(error: anyhow::Error) -> AppError {
     if let Some(audio_error) = error.downcast_ref::<AudioError>() {
@@ -164,14 +165,31 @@ pub fn stop_recording(
     )
     .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
 
-    let session = {
+    let (session, trigger) = {
         let mut recording = state.recording().lock().expect("recording mutex poisoned");
         recording.take_session()
     }
     .ok_or_else(|| AppErrorDto::unknown("no active recording session"))?;
 
-    match state.services().recording_pipeline().stop_manual(&session) {
+    match state
+        .services()
+        .recording_pipeline()
+        .stop(&session, trigger != RecordingTrigger::Manual)
+    {
         Ok(result) => {
+            let history_enabled = state
+                .services()
+                .settings()
+                .map_err(|error| AppErrorDto::unknown(error.to_string()))?
+                .history_enabled;
+            if history_enabled {
+                state
+                    .history()
+                    .insert_completed(&result)
+                    .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
+                app.emit("history_changed", ())
+                    .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
+            }
             let dto = RecordingResultDto {
                 session_id: result.session_id.clone(),
                 raw_text: result.raw_text.clone(),
@@ -204,8 +222,12 @@ pub fn stop_recording(
             emit_recording_state(
                 app,
                 RecordingStateChanged {
-                    state: RecordingState::Inserting,
-                    transcription_id: None,
+                    state: if trigger == RecordingTrigger::Manual {
+                        RecordingState::Idle
+                    } else {
+                        RecordingState::Inserting
+                    },
+                    transcription_id: Some(result.session_id.clone()),
                 },
             )
             .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
@@ -213,7 +235,7 @@ pub fn stop_recording(
                 app,
                 RecordingStateChanged {
                     state: RecordingState::Idle,
-                    transcription_id: None,
+                    transcription_id: Some(result.session_id.clone()),
                 },
             )
             .map_err(|error| AppErrorDto::unknown(error.to_string()))?;

@@ -185,6 +185,8 @@ pub struct SettingsUpdateDto {
     pub start_minimized: Option<bool>,
     pub minimize_to_tray: Option<bool>,
     pub show_hud: Option<bool>,
+    pub play_start_sound: Option<bool>,
+    pub play_completion_sound: Option<bool>,
     pub microphone_device_id: Option<Option<String>>,
     pub vad_sensitivity: Option<f64>,
     pub push_to_talk_shortcut: Option<String>,
@@ -207,6 +209,8 @@ impl From<SettingsUpdateDto> for SettingsUpdate {
             start_minimized: value.start_minimized,
             minimize_to_tray: value.minimize_to_tray,
             show_hud: value.show_hud,
+            play_start_sound: value.play_start_sound,
+            play_completion_sound: value.play_completion_sound,
             microphone_device_id: value.microphone_device_id,
             vad_sensitivity: value.vad_sensitivity,
             push_to_talk_shortcut: value.push_to_talk_shortcut,
@@ -298,4 +302,11 @@ pub struct RecordingResultDto {
     pub application_name: String,
     pub window_title: String,
     pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryQueryDto {
+    pub limit: usize,
+    pub cursor: Option<String>,
 }

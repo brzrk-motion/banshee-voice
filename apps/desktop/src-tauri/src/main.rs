@@ -24,8 +24,7 @@ fn main() {
                     .build(),
             )?;
 
-            let state = app_state::ManagedAppState::initialize()
-                .map_err(setup_error)?;
+            let state = app_state::ManagedAppState::initialize().map_err(setup_error)?;
             windows::register(app.handle())?;
             tray::initialize(app.handle())?;
             app.manage(hotkeys::HotkeyBindings::default());
@@ -47,6 +46,8 @@ fn main() {
             commands::recording::recording_start_manual,
             commands::recording::recording_stop_manual,
             commands::recording::recording_cancel,
+            commands::history::history_list,
+            commands::history::clipboard_write_text,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Banshee desktop application");

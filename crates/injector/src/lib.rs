@@ -48,6 +48,11 @@ impl OutputBackend for ClipboardInjector {
 }
 
 impl ClipboardInjector {
+    pub fn copy_text(&self, text: &str) -> Result<()> {
+        let mut clipboard = SystemClipboard::new()?;
+        clipboard.set_text(text)
+    }
+
     fn insert_with_clipboard(
         &self,
         request: OutputRequest,

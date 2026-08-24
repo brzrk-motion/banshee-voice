@@ -53,6 +53,14 @@ impl RecordingPipeline {
     }
 
     pub fn stop_manual(&self, session: &CaptureSession) -> Result<PipelineRunResult> {
+        self.stop(session, true)
+    }
+
+    pub fn stop(
+        &self,
+        session: &CaptureSession,
+        perform_output: bool,
+    ) -> Result<PipelineRunResult> {
         let settings = self.services.settings.load()?;
         let profile = self.services.profiles.default_profile()?;
         let active_window = self.services.active_window.active_window()?;
@@ -74,18 +82,27 @@ impl RecordingPipeline {
             selected_model_name: Some("Whisper Preview".to_string()),
         })?;
 
+        let profile_id = profile.id.clone();
         let cleanup = self.services.cleanup.cleanup(CleanupRequest {
             raw_text: transcription.raw_text.clone(),
             profile,
         })?;
 
-        let output = self.services.injector.insert_text(OutputRequest {
-            text: cleanup.final_text.clone(),
-            preserve_clipboard: settings.preserve_clipboard,
-            paste_delay_ms: settings.paste_delay_ms,
-            auto_paste_enabled: settings.auto_paste_enabled,
-            session_type: self.services.capabilities.session_type,
-        })?;
+        let output = if perform_output {
+            self.services.injector.insert_text(OutputRequest {
+                text: cleanup.final_text.clone(),
+                preserve_clipboard: settings.preserve_clipboard,
+                paste_delay_ms: settings.paste_delay_ms,
+                auto_paste_enabled: settings.auto_paste_enabled,
+                session_type: self.services.capabilities.session_type,
+            })?
+        } else {
+            crate::domain::OutputResponse {
+                method: crate::domain::OutputMethod::None,
+                result: crate::domain::OutputResultKind::Success,
+                message: "Transcript is ready in the scratch space.".to_string(),
+            }
+        };
 
         Ok(PipelineRunResult {
             session_id: session.id.clone(),
@@ -102,6 +119,9 @@ impl RecordingPipeline {
             output,
             active_window,
             duration_ms: vad_result.trimmed_audio.duration_ms,
+            profile_id,
+            acceleration_preference: settings.acceleration_preference,
+            session_type: self.services.capabilities.session_type,
         })
     }
 
@@ -127,6 +147,7 @@ mod tests {
         ActiveWindowInfo, CleanupOutput, OutputMethod, OutputResponse, OutputResultKind,
         ProfileSummary, SessionType, Settings,
     };
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct TestSettingsStore;
 
@@ -234,10 +255,12 @@ mod tests {
 
     struct TestOutputBackend {
         result: OutputResultKind,
+        calls: Arc<AtomicUsize>,
     }
 
     impl OutputBackend for TestOutputBackend {
         fn insert_text(&self, _request: OutputRequest) -> Result<OutputResponse> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(OutputResponse {
                 method: OutputMethod::ClipboardPaste,
                 result: self.result,
@@ -257,7 +280,11 @@ mod tests {
         }
     }
 
-    fn pipeline(speech_detected: bool, result: OutputResultKind) -> RecordingPipeline {
+    fn pipeline_with_counter(
+        speech_detected: bool,
+        result: OutputResultKind,
+        calls: Arc<AtomicUsize>,
+    ) -> RecordingPipeline {
         RecordingPipeline::new(PipelineServices {
             settings: Arc::new(TestSettingsStore),
             profiles: Arc::new(TestProfileStore),
@@ -273,9 +300,13 @@ mod tests {
             vad: Arc::new(TestVad { speech_detected }),
             stt: Arc::new(TestStt),
             cleanup: Arc::new(TestCleanup),
-            injector: Arc::new(TestOutputBackend { result }),
+            injector: Arc::new(TestOutputBackend { result, calls }),
             active_window: Arc::new(TestActiveWindowProvider),
         })
+    }
+
+    fn pipeline(speech_detected: bool, result: OutputResultKind) -> RecordingPipeline {
+        pipeline_with_counter(speech_detected, result, Arc::new(AtomicUsize::new(0)))
     }
 
     #[test]
@@ -301,5 +332,20 @@ mod tests {
             .expect_err("no-speech runs should fail");
 
         assert!(error.to_string().contains("no speech detected"));
+    }
+
+    #[test]
+    fn scratch_space_runs_skip_output_injection() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let pipeline = pipeline_with_counter(true, OutputResultKind::Success, calls.clone());
+        let session = pipeline.start_manual().expect("session should start");
+
+        let result = pipeline
+            .stop(&session, false)
+            .expect("pipeline should succeed");
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(result.output.method, OutputMethod::None);
+        assert_eq!(result.final_text, "ship it.");
     }
 }

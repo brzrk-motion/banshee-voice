@@ -142,6 +142,12 @@ impl SettingsStore for SqliteSettingsRepository {
         if let Some(value) = update.show_hud {
             current.show_hud = value;
         }
+        if let Some(value) = update.play_start_sound {
+            current.play_start_sound = value;
+        }
+        if let Some(value) = update.play_completion_sound {
+            current.play_completion_sound = value;
+        }
         if let Some(value) = update.microphone_device_id {
             current.microphone_device_id = value;
         }
@@ -262,5 +268,32 @@ fn decode_audio_retention(value: String) -> AudioRetentionPolicy {
         "24_hours" => AudioRetentionPolicy::Hours24,
         "forever" => AudioRetentionPolicy::Forever,
         _ => AudioRetentionPolicy::Never,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persists_sound_preferences() {
+        let mut connection = Connection::open_in_memory().expect("database should open");
+        crate::migrate(&mut connection).expect("migration should apply");
+        let repository = SqliteSettingsRepository::new(Arc::new(Mutex::new(connection)));
+        repository.seed_default().expect("defaults should seed");
+
+        let updated = repository
+            .update(SettingsUpdate {
+                play_start_sound: Some(true),
+                play_completion_sound: Some(true),
+                ..SettingsUpdate::default()
+            })
+            .expect("settings should update");
+
+        assert!(updated.play_start_sound);
+        assert!(updated.play_completion_sound);
+        let loaded = repository.load().expect("settings should load");
+        assert!(loaded.play_start_sound);
+        assert!(loaded.play_completion_sound);
     }
 }

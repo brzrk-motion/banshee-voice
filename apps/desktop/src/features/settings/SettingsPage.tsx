@@ -1,0 +1,91 @@
+import { LoaderCircle, Save } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import type { AudioInputDevice, Settings } from "@/lib/types";
+import { ShortcutCapture } from "./ShortcutCapture";
+
+type Props = {
+  settings: Settings | null;
+  devices: AudioInputDevice[];
+  saving: boolean;
+  onSave: (settings: Settings) => Promise<void>;
+};
+
+function SettingRow({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return <div className="grid gap-3 border-t py-4 first:border-t-0 first:pt-0 sm:grid-cols-[minmax(0,1fr)_260px] sm:items-center"><div><Label>{title}</Label><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div><div>{children}</div></div>;
+}
+
+export function SettingsPage({ settings, devices, saving, onSave }: Props) {
+  const [draft, setDraft] = useState<Settings | null>(settings);
+  useEffect(() => setDraft(settings), [settings]);
+  const dirty = useMemo(() => Boolean(draft && settings && JSON.stringify(draft) !== JSON.stringify(settings)), [draft, settings]);
+  const update = <K extends keyof Settings>(key: K, value: Settings[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
+
+  if (!draft) return <div className="mx-auto max-w-4xl space-y-4 p-6 lg:p-8"><div className="h-48 animate-pulse rounded-xl bg-muted" /><div className="h-48 animate-pulse rounded-xl bg-muted" /></div>;
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-5 p-6 pb-28 lg:p-8 lg:pb-28">
+      <Card>
+        <CardHeader><CardTitle>Microphone</CardTitle><CardDescription>Choose the input Banshee listens to and tune speech detection.</CardDescription></CardHeader>
+        <CardContent>
+          <SettingRow title="Input device" description="Use the system default or choose a specific microphone.">
+            <NativeSelect aria-label="Input device" value={draft.microphoneDeviceId ?? ""} onChange={(event) => update("microphoneDeviceId", event.target.value || null)}>
+              <option value="">System default</option>
+              {devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.isDefault ? " (default)" : ""}</option>)}
+            </NativeSelect>
+          </SettingRow>
+          <SettingRow title="Voice sensitivity" description="Higher values require a stronger voice signal.">
+            <div className="flex items-center gap-4"><Slider aria-label="Voice sensitivity" min={0} max={1} step={0.05} value={[draft.vadSensitivity]} onValueChange={([value]) => update("vadSensitivity", value)} /><span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{Math.round(draft.vadSensitivity * 100)}%</span></div>
+          </SettingRow>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>HUD</CardTitle><CardDescription>Control the compact recording overlay and its global shortcut.</CardDescription></CardHeader>
+        <CardContent>
+          <SettingRow title="Show recording HUD" description="Display recording and processing state over other applications."><Switch aria-label="Show recording HUD" checked={draft.showHud} onCheckedChange={(value) => update("showHud", value)} /></SettingRow>
+          <SettingRow title="Push-to-talk shortcut" description="Focus the field, then press the complete shortcut you want to use."><ShortcutCapture value={draft.pushToTalkShortcut} onChange={(value) => update("pushToTalkShortcut", value)} /></SettingRow>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Output</CardTitle><CardDescription>Choose how HUD recordings hand text back to other applications.</CardDescription></CardHeader>
+        <CardContent>
+          <SettingRow title="Auto-paste" description="Paste after a HUD recording when the platform supports it."><Switch aria-label="Auto-paste" checked={draft.autoPasteEnabled} onCheckedChange={(value) => update("autoPasteEnabled", value)} /></SettingRow>
+          <SettingRow title="Preserve clipboard" description="Restore the previous clipboard when the output backend can do so."><Switch aria-label="Preserve clipboard" checked={draft.preserveClipboard} onCheckedChange={(value) => update("preserveClipboard", value)} /></SettingRow>
+          <SettingRow title="Paste delay" description="Wait before sending paste to the target application."><div className="relative"><Input aria-label="Paste delay" type="number" min={0} max={2000} value={draft.pasteDelayMs} onChange={(event) => update("pasteDelayMs", Number(event.target.value))} /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">ms</span></div></SettingRow>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Application</CardTitle><CardDescription>Control startup, tray, and feedback preferences.</CardDescription></CardHeader>
+        <CardContent>
+          <SettingRow title="Launch at login" description="Start Banshee when you sign in."><Switch aria-label="Launch at login" checked={draft.launchAtLogin} onCheckedChange={(value) => update("launchAtLogin", value)} /></SettingRow>
+          <SettingRow title="Start minimized" description="Open directly into the background."><Switch aria-label="Start minimized" checked={draft.startMinimized} onCheckedChange={(value) => update("startMinimized", value)} /></SettingRow>
+          <SettingRow title="Minimize to tray" description="Keep Banshee available after closing the main window."><Switch aria-label="Minimize to tray" checked={draft.minimizeToTray} onCheckedChange={(value) => update("minimizeToTray", value)} /></SettingRow>
+          <SettingRow title="Start sound" description="Play a cue when recording begins."><Switch aria-label="Start sound" checked={draft.playStartSound} onCheckedChange={(value) => update("playStartSound", value)} /></SettingRow>
+          <SettingRow title="Completion sound" description="Play a cue when transcription completes."><Switch aria-label="Completion sound" checked={draft.playCompletionSound} onCheckedChange={(value) => update("playCompletionSound", value)} /></SettingRow>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Processing & privacy</CardTitle><CardDescription>Transcription stays local. History contains text only.</CardDescription></CardHeader>
+        <CardContent>
+          <SettingRow title="Acceleration" description="Choose how local inference uses available hardware."><NativeSelect aria-label="Acceleration" value={draft.accelerationPreference} onChange={(event) => update("accelerationPreference", event.target.value as Settings["accelerationPreference"])}><option value="auto">Automatic</option><option value="cpu">CPU</option><option value="gpu">GPU</option></NativeSelect></SettingRow>
+          <SettingRow title="Cleanup model" description="Apply the optional local cleanup pass after transcription."><Switch aria-label="Cleanup model" checked={draft.cleanupLlmEnabled} onCheckedChange={(value) => update("cleanupLlmEnabled", value)} /></SettingRow>
+          <SettingRow title="Save text history" description="Store completed transcript text locally. Audio is never retained."><Switch aria-label="Save text history" checked={draft.historyEnabled} onCheckedChange={(value) => update("historyEnabled", value)} /></SettingRow>
+        </CardContent>
+      </Card>
+
+      <div className="sticky bottom-0 z-10 flex justify-end border-t bg-background/95 px-6 py-4 backdrop-blur">
+        <Button disabled={!dirty || saving} onClick={() => void onSave(draft)}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}{saving ? "Saving…" : "Save changes"}</Button>
+      </div>
+    </div>
+  );
+}

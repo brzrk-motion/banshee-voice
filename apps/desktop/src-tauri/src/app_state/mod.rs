@@ -9,6 +9,7 @@ use banshee_core::{
 use banshee_injector::ClipboardInjector;
 use banshee_platform::EnvActiveWindowProvider;
 use banshee_platform::PlatformCapabilityProbe;
+use banshee_storage::SqliteTranscriptionRepository;
 use banshee_storage::initialize_storage;
 use banshee_stt::WhisperCppPreviewEngine;
 use banshee_transformer::DeterministicCleanup;
@@ -43,15 +44,17 @@ impl RecordingRuntimeState {
         Ok(())
     }
 
-    pub fn take_session(&mut self) -> Option<CaptureSession> {
-        self.active_trigger = None;
-        self.active_session.take()
+    pub fn take_session(&mut self) -> Option<(CaptureSession, RecordingTrigger)> {
+        let session = self.active_session.take()?;
+        let trigger = self.active_trigger.take()?;
+        Some((session, trigger))
     }
 }
 
 #[derive(Clone)]
 pub struct ManagedAppState {
     services: Arc<AppServices>,
+    history: SqliteTranscriptionRepository,
     recording: Arc<Mutex<RecordingRuntimeState>>,
 }
 
@@ -79,6 +82,7 @@ impl ManagedAppState {
                 storage.paths.clone(),
                 recording_pipeline,
             )),
+            history: storage.transcriptions.clone(),
             recording: Arc::new(Mutex::new(RecordingRuntimeState {
                 active_session: None,
                 active_trigger: None,
@@ -93,5 +97,9 @@ impl ManagedAppState {
 
     pub fn recording(&self) -> &Arc<Mutex<RecordingRuntimeState>> {
         &self.recording
+    }
+
+    pub fn history(&self) -> &SqliteTranscriptionRepository {
+        &self.history
     }
 }

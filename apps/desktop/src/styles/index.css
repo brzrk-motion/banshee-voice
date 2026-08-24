@@ -1,246 +1,76 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
 :root {
   color-scheme: dark;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  background: #090b10;
-  color: #f3f6fb;
+  --background: #090909;
+  --foreground: #f4f4f5;
+  --card: #111112;
+  --card-foreground: #f4f4f5;
+  --primary: #f4f4f5;
+  --primary-foreground: #18181b;
+  --secondary: #202023;
+  --secondary-foreground: #f4f4f5;
+  --muted: #1c1c1f;
+  --muted-foreground: #a1a1aa;
+  --accent: #252529;
+  --accent-foreground: #fafafa;
+  --destructive: #dc2626;
+  --border: #29292d;
+  --input: #323237;
+  --ring: #71717a;
+  --sidebar: #0e0e0f;
+  --sidebar-foreground: #e4e4e7;
+  --sidebar-accent: #202023;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #252528;
+  --sidebar-ring: #71717a;
+}
+
+* { box-sizing: border-box; border-color: var(--border); }
+html, body, #root { margin: 0; min-height: 100%; }
+body {
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  margin: 0;
-  min-height: 100%;
-}
-
-body {
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at top, rgba(76, 104, 255, 0.18), transparent 32%),
-    linear-gradient(180deg, #0b0e14 0%, #090b10 100%);
-}
-
-.shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 32px;
-}
-
-.shell--dashboard {
-  place-items: stretch;
-}
-
-.panel {
-  width: min(640px, 100%);
-  padding: 32px;
-  border: 1px solid rgba(160, 176, 214, 0.18);
-  border-radius: 24px;
-  background: rgba(12, 16, 24, 0.78);
-  box-shadow:
-    0 24px 80px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(20px);
-}
-
-.panel--wide {
-  width: min(1180px, 100%);
-}
-
-.eyebrow {
-  margin-bottom: 16px;
-  color: #8ca1ff;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-h1 {
-  margin: 0 0 12px;
-  font-size: clamp(2rem, 4vw, 3rem);
-  line-height: 1.05;
-}
-
-p {
-  margin: 0;
-  max-width: 56ch;
-  color: rgba(243, 246, 251, 0.72);
-}
-
-h2 {
-  margin: 0;
-  font-size: 1.25rem;
-}
-
-button,
-input,
-select {
-  font: inherit;
-}
-
-button {
-  padding: 12px 16px;
-  border-radius: 14px;
-  border: 1px solid rgba(148, 162, 255, 0.18);
-  background: rgba(22, 27, 40, 0.84);
-  color: #f3f6fb;
-  cursor: pointer;
-}
-
-button.primary {
-  background: linear-gradient(135deg, #6b7fff 0%, #8f69ff 100%);
-  border-color: transparent;
-}
-
-input,
-select {
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 162, 255, 0.16);
-  background: rgba(15, 19, 29, 0.92);
-  color: #f3f6fb;
-}
-
-.app-grid {
-  display: grid;
-  gap: 24px;
-  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
-}
-
-.card {
-  padding: 22px;
-  border-radius: 22px;
-  border: 1px solid rgba(148, 162, 255, 0.14);
-  background: rgba(8, 11, 18, 0.62);
-}
-
-.card.inset {
-  background: rgba(5, 8, 14, 0.68);
-}
-
-.stack-gap {
-  display: grid;
-  gap: 18px;
-}
-
-.hero-row,
-.control-row,
-.metrics-grid,
-.result-grid,
-.grid-two,
-.toggles {
-  display: grid;
-  gap: 16px;
-}
-
-.hero-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-}
-
-.metrics-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.metric-card {
-  padding: 16px;
-  border-radius: 18px;
-  background: rgba(18, 24, 36, 0.86);
-  border: 1px solid rgba(148, 162, 255, 0.12);
-}
-
-.metric-card span,
-.meta-label,
-.section-label {
-  display: block;
-  margin-bottom: 6px;
-  color: #8ca1ff;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.metric-card strong,
-.result-grid strong {
-  display: block;
-}
-
-.field {
-  display: grid;
-  gap: 8px;
-}
-
-.grid-two {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.toggles label {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  color: rgba(243, 246, 251, 0.8);
-}
-
-.toggles input {
-  width: auto;
-}
-
-.status-pill {
-  padding: 10px 12px;
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+::selection { background: rgba(244, 244, 245, 0.22); }
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
   border-radius: 999px;
-  border: 1px solid rgba(148, 162, 255, 0.18);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 12px;
-}
-
-.status-pill--recording {
-  color: #92f7ce;
-}
-
-.status-pill--error {
-  color: #ff9a9a;
-}
-
-.transcript-block {
-  max-width: none;
-  padding: 14px;
-  border-radius: 16px;
-  background: rgba(14, 18, 28, 0.9);
-  border: 1px solid rgba(148, 162, 255, 0.12);
-  color: #f3f6fb;
-}
-
-.muted {
-  color: rgba(243, 246, 251, 0.65);
-}
-
-.error-banner {
-  margin-top: 18px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: rgba(92, 19, 30, 0.55);
-  border: 1px solid rgba(255, 140, 140, 0.28);
-  color: #ffd8d8;
-}
-
-@media (max-width: 960px) {
-  .app-grid,
-  .metrics-grid,
-  .grid-two,
-  .hero-row {
-    grid-template-columns: 1fr;
-  }
+  background: #36363b;
+  background-clip: padding-box;
 }

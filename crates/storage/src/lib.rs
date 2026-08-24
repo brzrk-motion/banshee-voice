@@ -3,6 +3,7 @@
 pub mod migrations;
 pub mod profile_repo;
 pub mod settings_repo;
+pub mod transcription_repo;
 
 use anyhow::{Context, Result};
 use banshee_core::domain::AppPaths;
@@ -14,6 +15,7 @@ use std::sync::{Arc, Mutex};
 
 pub use profile_repo::SqliteProfileRepository;
 pub use settings_repo::SqliteSettingsRepository;
+pub use transcription_repo::SqliteTranscriptionRepository;
 
 pub fn resolve_app_paths() -> Result<AppPaths> {
     let data_dir = resolve_data_dir()?;
@@ -120,11 +122,14 @@ pub fn initialize_storage() -> Result<StorageRuntime> {
     let profiles = SqliteProfileRepository::new(connection.clone());
     profiles.seed_builtin_profiles()?;
 
+    let transcriptions = SqliteTranscriptionRepository::new(connection.clone());
+
     Ok(StorageRuntime {
         paths,
         connection,
         settings,
         profiles,
+        transcriptions,
     })
 }
 
@@ -134,4 +139,5 @@ pub struct StorageRuntime {
     pub connection: Arc<Mutex<Connection>>,
     pub settings: SqliteSettingsRepository,
     pub profiles: SqliteProfileRepository,
+    pub transcriptions: SqliteTranscriptionRepository,
 }

@@ -172,6 +172,8 @@ impl From<Settings> for SettingsUpdate {
             start_minimized: Some(value.start_minimized),
             minimize_to_tray: Some(value.minimize_to_tray),
             show_hud: Some(value.show_hud),
+            play_start_sound: Some(value.play_start_sound),
+            play_completion_sound: Some(value.play_completion_sound),
             microphone_device_id: Some(value.microphone_device_id),
             vad_sensitivity: Some(value.vad_sensitivity),
             push_to_talk_shortcut: Some(value.push_to_talk_shortcut),
@@ -196,6 +198,8 @@ pub struct SettingsUpdate {
     pub start_minimized: Option<bool>,
     pub minimize_to_tray: Option<bool>,
     pub show_hud: Option<bool>,
+    pub play_start_sound: Option<bool>,
+    pub play_completion_sound: Option<bool>,
     pub microphone_device_id: Option<Option<String>>,
     pub vad_sensitivity: Option<f64>,
     pub push_to_talk_shortcut: Option<String>,
@@ -393,6 +397,24 @@ pub struct PipelineRunResult {
     pub output: OutputResponse,
     pub active_window: ActiveWindowInfo,
     pub duration_ms: u64,
+    pub profile_id: String,
+    pub acceleration_preference: AccelerationPreference,
+    pub session_type: SessionType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryItem {
+    pub id: String,
+    pub created_at: String,
+    pub final_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryPage {
+    pub items: Vec<HistoryItem>,
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
