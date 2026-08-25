@@ -36,9 +36,15 @@ fn main() {
                 .map_err(setup_error)?;
             app.state::<app_state::ManagedAppState>()
                 .ensure_speech_model(app.handle().clone());
-            if settings.cleanup_llm_enabled {
+            if app
+                .state::<app_state::ManagedAppState>()
+                .plugins()
+                .map_err(setup_error)?
+                .iter()
+                .any(|plugin| plugin.enabled)
+            {
                 app.state::<app_state::ManagedAppState>()
-                    .ensure_cleanup_model(app.handle().clone());
+                    .ensure_prompt_enhancer(app.handle().clone());
             }
             hotkeys::sync(app.handle(), &settings)
                 .map_err(|error| setup_error(anyhow::anyhow!(error)))?;
@@ -74,6 +80,9 @@ fn main() {
             commands::models::models_status_get,
             commands::models::model_status_get,
             commands::models::model_download_retry,
+            commands::plugins::plugins_list,
+            commands::plugins::plugin_set_enabled,
+            commands::plugins::plugin_setup_retry,
             commands::recording::recording_start_manual,
             commands::recording::recording_stop_manual,
             commands::recording::recording_cancel,

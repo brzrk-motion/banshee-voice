@@ -4,11 +4,13 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { prepareNativeEnvironment } from "./native-toolchain.mjs";
+import { buildPromptWorker } from "./build-sidecar.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 const desktopDirectory = path.join(repositoryRoot, "apps", "desktop");
 const subcommand = process.argv[2];
+const tauriArgs = process.argv.slice(3);
 
 if (!new Set(["dev", "build"]).has(subcommand)) {
   console.error("Usage: node scripts/tauri.mjs <dev|build>");
@@ -16,11 +18,15 @@ if (!new Set(["dev", "build"]).has(subcommand)) {
 }
 
 const environment = prepareNativeEnvironment(repositoryRoot);
+buildPromptWorker(repositoryRoot, environment, subcommand === "build", tauriArgs);
+environment.TAURI_CONFIG = JSON.stringify({
+  bundle: { externalBin: ["binaries/banshee-prompt-worker"] },
+});
 const command = process.platform === "win32" ? environment.ComSpec ?? "cmd.exe" : "npm";
 const args =
   process.platform === "win32"
-    ? ["/d", "/s", "/c", `npm exec tauri ${subcommand}`]
-    : ["exec", "tauri", subcommand];
+    ? ["/d", "/s", "/c", ["npm", "exec", "tauri", subcommand, ...tauriArgs].join(" ")]
+    : ["exec", "tauri", subcommand, ...tauriArgs];
 const child = spawn(command, args, {
   cwd: desktopDirectory,
   env: environment,

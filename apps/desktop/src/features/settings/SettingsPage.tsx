@@ -8,17 +8,15 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { AudioInputDevice, DictionaryEntry, ModelStatus, Settings } from "@/lib/types";
+import type { AudioInputDevice, DictionaryEntry, Settings } from "@/lib/types";
 import { ShortcutCapture } from "./ShortcutCapture";
 
 type Props = {
   settings: Settings | null;
   devices: AudioInputDevice[];
   vocabulary: DictionaryEntry[];
-  cleanupStatus: ModelStatus;
   saving: boolean;
   onSave: (settings: Settings, vocabulary: DictionaryEntry[]) => Promise<void>;
-  onRetryCleanup: () => Promise<void>;
 };
 
 function formatVocabulary(entries: DictionaryEntry[]) {
@@ -37,7 +35,7 @@ function SettingRow({ title, description, children }: { title: string; descripti
   return <div className="grid gap-3 border-t py-4 first:border-t-0 first:pt-0 sm:grid-cols-[minmax(0,1fr)_260px] sm:items-center"><div><Label>{title}</Label><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div><div>{children}</div></div>;
 }
 
-export function SettingsPage({ settings, devices, vocabulary, cleanupStatus, saving, onSave, onRetryCleanup }: Props) {
+export function SettingsPage({ settings, devices, vocabulary, saving, onSave }: Props) {
   const [draft, setDraft] = useState<Settings | null>(settings);
   const [vocabularyDraft, setVocabularyDraft] = useState(formatVocabulary(vocabulary));
   useEffect(() => setDraft(settings), [settings]);
@@ -93,12 +91,6 @@ export function SettingsPage({ settings, devices, vocabulary, cleanupStatus, sav
         <CardHeader><CardTitle>Processing & privacy</CardTitle><CardDescription>Transcription stays local. History contains text only.</CardDescription></CardHeader>
         <CardContent>
           <SettingRow title="Acceleration" description="This build currently runs local inference on CPU."><NativeSelect aria-label="Acceleration" value={draft.accelerationPreference} onChange={(event) => update("accelerationPreference", event.target.value as Settings["accelerationPreference"])}><option value="auto">Automatic (CPU)</option><option value="cpu">CPU</option><option value="gpu" disabled>GPU unavailable in this build</option></NativeSelect></SettingRow>
-          <SettingRow title="Cleanup model" description="Optionally refine transcripts locally. Missing or slow cleanup always falls back to deterministic text.">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3"><Switch aria-label="Cleanup model" checked={draft.cleanupLlmEnabled} onCheckedChange={(value) => update("cleanupLlmEnabled", value)} /><span className="text-xs text-muted-foreground">{cleanupStatus.state === "downloading" && cleanupStatus.totalBytes ? `Downloading ${Math.round(cleanupStatus.downloadedBytes / cleanupStatus.totalBytes * 100)}%` : cleanupStatus.state === "ready" ? "Installed" : cleanupStatus.state === "error" ? "Download failed" : "Not installed"}</span></div>
-              {cleanupStatus.state === "error" ? <Button type="button" size="sm" variant="outline" onClick={() => void onRetryCleanup()}>Retry cleanup download</Button> : null}
-            </div>
-          </SettingRow>
           <SettingRow title="Custom vocabulary" description="One canonical term per line, or use “heard phrase => Correct Term” for explicit aliases."><Textarea aria-label="Custom vocabulary" rows={7} value={vocabularyDraft} placeholder={"Banshee\nHUD\nbanci hud => Banshee HUD"} onChange={(event) => setVocabularyDraft(event.target.value)} /></SettingRow>
           <SettingRow title="Save text history" description="Store completed transcript text locally. Audio is never retained."><Switch aria-label="Save text history" checked={draft.historyEnabled} onCheckedChange={(value) => update("historyEnabled", value)} /></SettingRow>
         </CardContent>

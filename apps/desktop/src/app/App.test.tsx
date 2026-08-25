@@ -27,7 +27,6 @@ const settings = {
   audioRetentionPolicy: "never",
   preserveClipboard: true,
   pasteDelayMs: 120,
-  cleanupLlmEnabled: false,
 };
 
 describe("App startup", () => {
@@ -51,6 +50,6 @@ describe("App startup", () => {
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
     expect(await screen.findByText("Microphone")).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Cleanup model" })).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Cleanup model" })).not.toBeInTheDocument();
   });
 });

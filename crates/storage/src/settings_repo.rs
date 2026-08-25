@@ -34,14 +34,14 @@ impl SqliteSettingsRepository {
                 push_to_talk_shortcut, toggle_recording_shortcut, cancel_shortcut,
                 repaste_previous_shortcut, acceleration_preference, history_enabled,
                 audio_retention_policy, auto_paste_enabled, preserve_clipboard,
-                paste_delay_ms, cleanup_llm_enabled, updated_at
+                paste_delay_ms, updated_at
             ) VALUES (
                 1, ?1, ?2, ?3, ?4,
                 ?5, ?6, ?7, ?8,
                 ?9, ?10, ?11,
                 ?12, ?13, ?14,
                 ?15, ?16, ?17,
-                ?18, ?19, CURRENT_TIMESTAMP
+                ?18, CURRENT_TIMESTAMP
             )",
             params![
                 settings.launch_at_login,
@@ -62,7 +62,6 @@ impl SqliteSettingsRepository {
                 settings.auto_paste_enabled,
                 settings.preserve_clipboard,
                 settings.paste_delay_ms,
-                settings.cleanup_llm_enabled,
             ],
         )?;
         Ok(())
@@ -77,7 +76,7 @@ impl SqliteSettingsRepository {
                     push_to_talk_shortcut, toggle_recording_shortcut, cancel_shortcut,
                     repaste_previous_shortcut, acceleration_preference, history_enabled,
                     audio_retention_policy, auto_paste_enabled, preserve_clipboard,
-                    paste_delay_ms, cleanup_llm_enabled
+                    paste_delay_ms
                  FROM settings
                  WHERE id = 1",
                 [],
@@ -101,7 +100,6 @@ impl SqliteSettingsRepository {
                         auto_paste_enabled: row.get(15)?,
                         preserve_clipboard: row.get(16)?,
                         paste_delay_ms: row.get(17)?,
-                        cleanup_llm_enabled: row.get(18)?,
                     })
                 },
             )
@@ -184,9 +182,6 @@ impl SettingsStore for SqliteSettingsRepository {
         if let Some(value) = update.paste_delay_ms {
             current.paste_delay_ms = value;
         }
-        if let Some(value) = update.cleanup_llm_enabled {
-            current.cleanup_llm_enabled = value;
-        }
 
         let connection = self.connection.lock().expect("settings mutex poisoned");
         connection.execute(
@@ -209,7 +204,6 @@ impl SettingsStore for SqliteSettingsRepository {
                 auto_paste_enabled = ?16,
                 preserve_clipboard = ?17,
                 paste_delay_ms = ?18,
-                cleanup_llm_enabled = ?19,
                 updated_at = CURRENT_TIMESTAMP
              WHERE id = 1",
             params![
@@ -231,7 +225,6 @@ impl SettingsStore for SqliteSettingsRepository {
                 current.auto_paste_enabled,
                 current.preserve_clipboard,
                 current.paste_delay_ms,
-                current.cleanup_llm_enabled,
             ],
         )?;
 

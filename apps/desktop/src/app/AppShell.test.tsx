@@ -11,5 +11,7 @@ describe("AppShell", () => {
     expect(screen.getByRole("button", { name: "Settings" }).parentElement).toHaveClass("border-t");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     expect(onNavigate).toHaveBeenCalledWith("history");
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    expect(onNavigate).toHaveBeenCalledWith("plugins");
   });
 });

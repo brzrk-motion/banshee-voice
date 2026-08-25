@@ -6,7 +6,7 @@ pub const HUD_WINDOW_LABEL: &str = "hud";
 
 pub fn register(app: &AppHandle) -> tauri::Result<()> {
     if app.get_webview_window(HUD_WINDOW_LABEL).is_none() {
-        WebviewWindowBuilder::new(
+        let window = WebviewWindowBuilder::new(
             app,
             HUD_WINDOW_LABEL,
             WebviewUrl::App("index.html?view=hud".into()),
@@ -21,8 +21,12 @@ pub fn register(app: &AppHandle) -> tauri::Result<()> {
         .focusable(false)
         .shadow(false)
         .inner_size(360.0, 72.0)
-        .build()?
-        .set_ignore_cursor_events(true)?;
+        .build()?;
+
+        // GTK must realize the native window before Tao can set its input shape.
+        window.show()?;
+        window.set_ignore_cursor_events(true)?;
+        window.hide()?;
     }
 
     Ok(())

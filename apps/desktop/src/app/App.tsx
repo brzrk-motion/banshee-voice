@@ -3,10 +3,11 @@ import { useEffect, useState } from "react";
 import { Toaster, toast } from "sonner";
 import { AppShell } from "./AppShell";
 import { HistoryPage } from "@/features/history/HistoryPage";
+import { PluginsPage } from "@/features/plugins/PluginsPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TranscribePage } from "@/features/transcribe/TranscribePage";
 import { errorMessage, run } from "@/lib/tauri";
-import type { AudioInputDevice, DictionaryEntry, ModelStatus, ModelsStatus, PageId, RecordingResult, RecordingSnapshot, RecordingStateChanged, Settings } from "@/lib/types";
+import type { AudioInputDevice, DictionaryEntry, ModelStatus, ModelsStatus, PageId, PluginSummary, RecordingResult, RecordingSnapshot, RecordingStateChanged, Settings } from "@/lib/types";
 
 const missingCleanupStatus: ModelStatus = {
   capability: "cleanup",
@@ -41,6 +42,8 @@ export default function App() {
     cleanup: missingCleanupStatus,
   });
   const [vocabulary, setVocabulary] = useState<DictionaryEntry[]>([]);
+  const [plugins, setPlugins] = useState<PluginSummary[]>([]);
+  const [changingPlugin, setChangingPlugin] = useState<string | null>(null);
 
   useEffect(() => {
     const reportLoadError = (area: string) => (error: unknown) => {
@@ -51,6 +54,7 @@ export default function App() {
     void run<AudioInputDevice[]>("audio_list_input_devices").then(setDevices).catch(reportLoadError("audio devices"));
     void loadModelsStatus().then(setModelsStatus).catch(reportLoadError("model status"));
     void run<DictionaryEntry[]>("dictionary_entries_get").then(setVocabulary).catch(reportLoadError("custom vocabulary"));
+    void run<PluginSummary[]>("plugins_list").then(setPlugins).catch(reportLoadError("plugins"));
     void run<RecordingSnapshot>("recording_snapshot_get").then((snapshot) => {
       setRecordingState(snapshot.state);
       if (snapshot.lastTranscript) setScratchText(snapshot.lastTranscript);
@@ -71,6 +75,9 @@ export default function App() {
       setRecordingState("idle");
     }).then((unlisten) => { disposers.push(unlisten); }).catch(() => {});
     listen<PageId>("navigate_to_page", (event) => setPage(event.payload))
+      .then((unlisten) => { disposers.push(unlisten); })
+      .catch(() => {});
+    listen<void>("plugins_changed", () => { void run<PluginSummary[]>("plugins_list").then(setPlugins); })
       .then((unlisten) => { disposers.push(unlisten); })
       .catch(() => {});
     return () => disposers.forEach((dispose) => dispose());
@@ -143,6 +150,25 @@ export default function App() {
     }
   }
 
+  async function togglePlugin(pluginId: string, enabled: boolean) {
+    setChangingPlugin(pluginId);
+    try {
+      setPlugins(await run<PluginSummary[]>("plugin_set_enabled", { pluginId, enabled }));
+    } catch (error) {
+      toast.error("Plugin setting was not saved", { description: errorMessage(error) });
+    } finally {
+      setChangingPlugin(null);
+    }
+  }
+
+  async function retryPlugin(pluginId: string) {
+    try {
+      await run("plugin_setup_retry", { pluginId });
+    } catch (error) {
+      toast.error("Plugin setup could not start", { description: errorMessage(error) });
+    }
+  }
+
   return (
     <>
       <AppShell page={page} onNavigate={setPage}>
@@ -161,7 +187,8 @@ export default function App() {
           />
         ) : null}
         {page === "history" ? <HistoryPage onCopy={copyText} /> : null}
-        {page === "settings" ? <SettingsPage settings={settings} devices={devices} vocabulary={vocabulary} cleanupStatus={modelsStatus.cleanup} saving={savingSettings} onSave={saveSettings} onRetryCleanup={() => retryModelDownload("cleanup")} /> : null}
+        {page === "plugins" ? <PluginsPage plugins={plugins} changing={changingPlugin} onToggle={togglePlugin} onRetry={retryPlugin} /> : null}
+        {page === "settings" ? <SettingsPage settings={settings} devices={devices} vocabulary={vocabulary} saving={savingSettings} onSave={saveSettings} /> : null}
       </AppShell>
       <Toaster theme="dark" position="bottom-right" richColors closeButton />
     </>

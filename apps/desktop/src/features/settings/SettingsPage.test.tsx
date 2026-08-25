@@ -16,7 +16,6 @@ const settings: Settings = {
   audioRetentionPolicy: "never",
   preserveClipboard: true,
   pasteDelayMs: 40,
-  cleanupLlmEnabled: false,
 };
 
 afterEach(cleanup);
@@ -24,7 +23,7 @@ afterEach(cleanup);
 describe("SettingsPage", () => {
   it("saves a draft instead of persisting each edit", () => {
     const onSave = vi.fn(async () => {});
-    render(<SettingsPage settings={settings} devices={[]} vocabulary={[]} cleanupStatus={{ capability: "cleanup", state: "missing", modelName: "cleanup", downloadedBytes: 0 }} saving={false} onSave={onSave} onRetryCleanup={vi.fn(async () => {})} />);
+    render(<SettingsPage settings={settings} devices={[]} vocabulary={[]} saving={false} onSave={onSave} />);
 
     const save = screen.getByRole("button", { name: "Save changes" });
     expect(save).toBeDisabled();
@@ -37,7 +36,7 @@ describe("SettingsPage", () => {
 
   it("parses canonical terms and spoken aliases", () => {
     const onSave = vi.fn(async () => {});
-    render(<SettingsPage settings={settings} devices={[]} vocabulary={[]} cleanupStatus={{ capability: "cleanup", state: "missing", modelName: "cleanup", downloadedBytes: 0 }} saving={false} onSave={onSave} onRetryCleanup={vi.fn(async () => {})} />);
+    render(<SettingsPage settings={settings} devices={[]} vocabulary={[]} saving={false} onSave={onSave} />);
     fireEvent.change(screen.getByRole("textbox", { name: "Custom vocabulary" }), { target: { value: "HUD\nbanci => Banshee" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(settings, [

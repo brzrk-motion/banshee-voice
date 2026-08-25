@@ -2,6 +2,7 @@
 
 pub mod dictionary_repo;
 pub mod migrations;
+pub mod plugin_repo;
 pub mod profile_repo;
 pub mod settings_repo;
 pub mod transcription_repo;
@@ -15,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub use dictionary_repo::SqliteDictionaryRepository;
+pub use plugin_repo::SqlitePluginStateRepository;
 pub use profile_repo::SqliteProfileRepository;
 pub use settings_repo::SqliteSettingsRepository;
 pub use transcription_repo::SqliteTranscriptionRepository;
@@ -126,6 +128,7 @@ pub fn initialize_storage() -> Result<StorageRuntime> {
 
     let transcriptions = SqliteTranscriptionRepository::new(connection.clone());
     let dictionary = SqliteDictionaryRepository::new(connection.clone());
+    let plugins = SqlitePluginStateRepository::new(connection.clone());
 
     Ok(StorageRuntime {
         paths,
@@ -134,6 +137,7 @@ pub fn initialize_storage() -> Result<StorageRuntime> {
         profiles,
         dictionary,
         transcriptions,
+        plugins,
     })
 }
 
@@ -145,11 +149,26 @@ pub struct StorageRuntime {
     pub profiles: SqliteProfileRepository,
     pub dictionary: SqliteDictionaryRepository,
     pub transcriptions: SqliteTranscriptionRepository,
+    pub plugins: SqlitePluginStateRepository,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_migration_seeds_prompt_enhancer_disabled() {
+        let mut connection = Connection::open_in_memory().expect("database should open");
+        migrate(&mut connection).expect("migrations should apply");
+        let enabled: bool = connection
+            .query_row(
+                "SELECT enabled FROM plugin_states WHERE plugin_id = 'banshee.prompt-enhancer'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("prompt enhancer state");
+        assert!(!enabled);
+    }
 
     #[test]
     fn hud_background_migration_normalizes_existing_preferences() {

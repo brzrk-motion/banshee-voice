@@ -4,9 +4,10 @@ use std::sync::Arc;
 use crate::domain::{
     ActiveWindowProvider, AudioCapture, AudioCaptureRequest, AudioInputDevice, CleanupEngine,
     CleanupRequest, DictionaryStore, HudState, HudStateChanged, OutputBackend, OutputRequest,
-    PipelineRunResult, PipelineRunStatus, PlatformCapabilities, ProfileStore, RecordingOrigin,
-    RecordingSession, RecordingSnapshot, RecordingState, SettingsStore, TranscriptionEngine,
-    TranscriptionRequest, VadProcessor,
+    PipelineRunResult, PipelineRunStatus, PlatformCapabilities, PluginExecutionContext,
+    PluginRunStatus, PluginRunner, ProfileStore, RecordingOrigin, RecordingSession,
+    RecordingSnapshot, RecordingState, SettingsStore, TranscriptionEngine, TranscriptionRequest,
+    VadProcessor,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -24,6 +25,7 @@ pub struct PipelineServices {
     pub vad: Arc<dyn VadProcessor>,
     pub stt: Arc<dyn TranscriptionEngine>,
     pub cleanup: Arc<dyn CleanupEngine>,
+    pub plugins: Arc<dyn PluginRunner>,
     pub injector: Arc<dyn OutputBackend>,
     pub active_window: Arc<dyn ActiveWindowProvider>,
 }
@@ -104,15 +106,23 @@ impl RecordingPipeline {
         let profile_id = profile.id.clone();
         let cleanup = self.services.cleanup.cleanup(CleanupRequest {
             raw_text: transcription.raw_text.clone(),
-            profile,
-            vocabulary,
-            llm_enabled: settings.cleanup_llm_enabled,
+            profile: profile.clone(),
+            vocabulary: vocabulary.clone(),
             active_application: active_window.application_name.clone(),
+        })?;
+        let plugins = self.services.plugins.run(PluginExecutionContext {
+            raw_text: transcription.raw_text.clone(),
+            cleaned_text: cleanup.deterministic_text.clone(),
+            current_text: cleanup.deterministic_text.clone(),
+            profile: profile.clone(),
+            vocabulary: vocabulary.clone(),
+            active_application: active_window.application_name.clone(),
+            recording_origin: session.origin,
         })?;
 
         let output = if session.origin == RecordingOrigin::PushToTalk {
             self.services.injector.insert_text(OutputRequest {
-                text: cleanup.final_text.clone(),
+                text: plugins.final_text.clone(),
                 target: session.output_target.clone(),
                 preserve_clipboard: settings.preserve_clipboard,
                 paste_delay_ms: settings.paste_delay_ms,
@@ -132,14 +142,20 @@ impl RecordingPipeline {
             origin: session.origin,
             raw_text: transcription.raw_text,
             deterministic_text: cleanup.deterministic_text,
-            final_text: cleanup.final_text,
+            final_text: plugins.final_text.clone(),
             stt_backend: transcription.backend,
             cleanup_backend: cleanup.backend,
             stt_latency_ms: transcription.latency_ms,
             cleanup_latency_ms: cleanup.latency_ms,
-            cleanup_fallback_reason: cleanup.fallback_reason,
+            cleanup_fallback_reason: None,
+            plugin_runs: plugins.runs.clone(),
             peak_level: vad_result.peak_level,
-            status: if output.result == crate::domain::OutputResultKind::Success {
+            status: if output.result == crate::domain::OutputResultKind::Success
+                && !plugins
+                    .runs
+                    .iter()
+                    .any(|run| run.status != PluginRunStatus::Applied)
+            {
                 PipelineRunStatus::Completed
             } else {
                 PipelineRunStatus::FallbackUsed
@@ -191,7 +207,7 @@ mod tests {
     use super::*;
     use crate::domain::{
         ActiveWindowInfo, CaptureSession, CleanupOutput, OutputMethod, OutputResponse,
-        OutputResultKind, ProfileSummary, SessionType, Settings,
+        OutputResultKind, PluginPipelineOutput, ProfileSummary, SessionType, Settings,
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -313,10 +329,19 @@ mod tests {
         fn cleanup(&self, _request: CleanupRequest) -> Result<CleanupOutput> {
             Ok(CleanupOutput {
                 deterministic_text: "ship it.".to_string(),
-                final_text: "ship it.".to_string(),
                 backend: "deterministic".to_string(),
                 latency_ms: 1,
-                fallback_reason: None,
+            })
+        }
+    }
+
+    struct TestPluginRunner;
+
+    impl PluginRunner for TestPluginRunner {
+        fn run(&self, context: PluginExecutionContext) -> Result<PluginPipelineOutput> {
+            Ok(PluginPipelineOutput {
+                final_text: context.current_text,
+                runs: vec![],
             })
         }
     }
@@ -379,6 +404,7 @@ mod tests {
             vad: Arc::new(TestVad { speech_detected }),
             stt: Arc::new(TestStt),
             cleanup: Arc::new(TestCleanup),
+            plugins: Arc::new(TestPluginRunner),
             injector: Arc::new(TestOutputBackend { result, calls }),
             active_window: Arc::new(TestActiveWindowProvider),
         })

@@ -15,6 +15,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "0002_hud_background_defaults",
         sql: include_str!("../migrations/0002_hud_background_defaults.sql"),
     },
+    Migration {
+        version: 3,
+        name: "0003_plugins",
+        sql: include_str!("../migrations/0003_plugins.sql"),
+    },
 ];
 
 pub fn all() -> &'static [Migration] {

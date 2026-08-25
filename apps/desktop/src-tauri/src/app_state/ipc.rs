@@ -1,8 +1,8 @@
 use banshee_core::domain::{
     AccelerationPreference, AppError, AppErrorCode, AudioInputDevice, AudioLevelChanged,
     AudioRetentionPolicy, DashboardSnapshot, FallbackUsed, HudState, HudStateChanged, OutputMethod,
-    OutputResultKind, PipelineRunStatus, RecordingOrigin, RecordingState, RecordingStateChanged,
-    SessionType, Settings, SettingsUpdate,
+    OutputResultKind, PipelineRunStatus, PluginRunRecord, RecordingOrigin, RecordingState,
+    RecordingStateChanged, SessionType, Settings, SettingsUpdate,
 };
 use serde::{Deserialize, Serialize};
 
@@ -149,7 +149,6 @@ pub struct SettingsDto {
     pub auto_paste_enabled: bool,
     pub preserve_clipboard: bool,
     pub paste_delay_ms: i64,
-    pub cleanup_llm_enabled: bool,
 }
 
 impl From<Settings> for SettingsDto {
@@ -173,7 +172,6 @@ impl From<Settings> for SettingsDto {
             auto_paste_enabled: value.auto_paste_enabled,
             preserve_clipboard: value.preserve_clipboard,
             paste_delay_ms: value.paste_delay_ms,
-            cleanup_llm_enabled: value.cleanup_llm_enabled,
         }
     }
 }
@@ -199,7 +197,6 @@ pub struct SettingsUpdateDto {
     pub auto_paste_enabled: Option<bool>,
     pub preserve_clipboard: Option<bool>,
     pub paste_delay_ms: Option<i64>,
-    pub cleanup_llm_enabled: Option<bool>,
 }
 
 impl From<SettingsUpdateDto> for SettingsUpdate {
@@ -223,7 +220,6 @@ impl From<SettingsUpdateDto> for SettingsUpdate {
             auto_paste_enabled: value.auto_paste_enabled,
             preserve_clipboard: value.preserve_clipboard,
             paste_delay_ms: value.paste_delay_ms,
-            cleanup_llm_enabled: value.cleanup_llm_enabled,
         }
     }
 }
@@ -313,6 +309,7 @@ pub struct RecordingResultDto {
     pub stt_latency_ms: u64,
     pub cleanup_latency_ms: u64,
     pub cleanup_fallback_reason: Option<String>,
+    pub plugin_runs: Vec<PluginRunRecord>,
     pub peak_level: f32,
     pub status: PipelineRunStatus,
     pub output_method: OutputMethod,

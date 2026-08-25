@@ -1,4 +1,4 @@
-import { History, Mic2, Settings as SettingsIcon, Waves } from "lucide-react";
+import { Blocks, History, Mic2, Settings as SettingsIcon, Waves } from "lucide-react";
 import type { ReactNode } from "react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarMenuButton, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import type { PageId } from "@/lib/types";
@@ -6,6 +6,7 @@ import type { PageId } from "@/lib/types";
 const pageTitles: Record<PageId, { title: string; description: string }> = {
   transcribe: { title: "Transcribe", description: "Record an idea and shape it in your scratch space." },
   history: { title: "History", description: "Your locally stored transcripts, newest first." },
+  plugins: { title: "Plugins", description: "Choose how Banshee transforms your finished transcripts." },
   settings: { title: "Settings", description: "Configure Banshee for your microphone and workflow." },
 };
 
@@ -30,6 +31,9 @@ export function AppShell({ page, onNavigate, children }: { page: PageId; onNavig
             </SidebarMenuButton>
             <SidebarMenuButton label="History" active={page === "history"} onClick={() => onNavigate("history")}>
               <History />
+            </SidebarMenuButton>
+            <SidebarMenuButton label="Plugins" active={page === "plugins"} onClick={() => onNavigate("plugins")}>
+              <Blocks />
             </SidebarMenuButton>
           </SidebarContent>
           <SidebarFooter>

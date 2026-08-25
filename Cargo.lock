@@ -357,6 +357,7 @@ dependencies = [
  "banshee-injector",
  "banshee-models",
  "banshee-platform",
+ "banshee-plugins",
  "banshee-storage",
  "banshee-stt",
  "banshee-transformer",
@@ -431,6 +432,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "banshee-plugins"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "banshee-contracts",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "banshee-prompt-worker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "banshee-contracts",
+ "banshee-plugins",
+ "encoding_rs",
+ "llama-cpp-2",
+ "serde_json",
+]
+
+[[package]]
 name = "banshee-storage"
 version = "0.1.0"
 dependencies = [
@@ -459,9 +482,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "banshee-contracts",
- "encoding_rs",
- "llama-cpp-2",
- "serde",
 ]
 
 [[package]]

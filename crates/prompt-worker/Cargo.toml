@@ -1,5 +1,5 @@
 [package]
-name = "banshee-transformer"
+name = "banshee-prompt-worker"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,3 +8,8 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 banshee-contracts = { path = "../contracts" }
+banshee-plugins = { path = "../plugins" }
+encoding_rs.workspace = true
+llama-cpp-2.workspace = true
+serde_json.workspace = true
+

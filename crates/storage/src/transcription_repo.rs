@@ -32,12 +32,12 @@ impl SqliteTranscriptionRepository {
                 project_id, profile_id, speech_model_id, cleanup_model_id, stt_backend,
                 cleanup_backend, acceleration_requested, acceleration_actual,
                 stt_latency_ms, cleanup_latency_ms, total_latency_ms,
-                output_method, output_result, error_code, error_message
+                output_method, output_result, error_code, error_message, plugin_runs_json
              ) VALUES (
                 ?1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
                 ?2, ?3, 0, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                 NULL, ?12, NULL, NULL, ?13, ?14, ?15, 'cpu',
-                ?16, ?17, ?18, ?19, ?20, NULL, ?21
+                ?16, ?17, ?18, ?19, ?20, NULL, ?21, ?22
              )",
             params![
                 result.session_id,
@@ -61,6 +61,7 @@ impl SqliteTranscriptionRepository {
                 encode_output_method(result.output.method),
                 encode_output_result(result.output.result),
                 result.cleanup_fallback_reason,
+                serde_json::to_string(&result.plugin_runs)?,
             ],
         )?;
 
@@ -189,6 +190,7 @@ mod tests {
             stt_latency_ms: 10,
             cleanup_latency_ms: 1,
             cleanup_fallback_reason: None,
+            plugin_runs: vec![],
             peak_level: 0.5,
             status: PipelineRunStatus::Completed,
             output: OutputResponse {
@@ -237,6 +239,14 @@ mod tests {
             )
             .expect("processing metadata");
         assert_eq!(metadata, ("deterministic".into(), 10, 1, "cpu".into()));
+        let plugin_runs: String = connection
+            .query_row(
+                "SELECT plugin_runs_json FROM transcriptions WHERE id = 'session-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("plugin metadata");
+        assert_eq!(plugin_runs, "[]");
     }
 
     #[test]

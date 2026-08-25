@@ -144,7 +144,6 @@ pub struct Settings {
     pub auto_paste_enabled: bool,
     pub preserve_clipboard: bool,
     pub paste_delay_ms: i64,
-    pub cleanup_llm_enabled: bool,
 }
 
 impl Default for Settings {
@@ -168,7 +167,6 @@ impl Default for Settings {
             auto_paste_enabled: true,
             preserve_clipboard: true,
             paste_delay_ms: 40,
-            cleanup_llm_enabled: false,
         }
     }
 }
@@ -194,7 +192,6 @@ impl From<Settings> for SettingsUpdate {
             auto_paste_enabled: Some(value.auto_paste_enabled),
             preserve_clipboard: Some(value.preserve_clipboard),
             paste_delay_ms: Some(value.paste_delay_ms),
-            cleanup_llm_enabled: Some(value.cleanup_llm_enabled),
         }
     }
 }
@@ -220,7 +217,6 @@ pub struct SettingsUpdate {
     pub auto_paste_enabled: Option<bool>,
     pub preserve_clipboard: Option<bool>,
     pub paste_delay_ms: Option<i64>,
-    pub cleanup_llm_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -400,7 +396,6 @@ pub struct CleanupRequest {
     pub raw_text: String,
     pub profile: ProfileSummary,
     pub vocabulary: Vec<DictionaryEntry>,
-    pub llm_enabled: bool,
     pub active_application: String,
 }
 
@@ -408,10 +403,93 @@ pub struct CleanupRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CleanupOutput {
     pub deterministic_text: String,
-    pub final_text: String,
     pub backend: String,
     pub latency_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginRunStatus {
+    Applied,
+    Skipped,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginRuntimeState {
+    Missing,
+    Downloading,
+    Loading,
+    Ready,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginManifest {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub version: String,
+    pub author: String,
+    pub stage: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSummary {
+    pub manifest: PluginManifest,
+    pub enabled: bool,
+    pub runtime_state: PluginRuntimeState,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginRuntimeStatus {
+    pub state: PluginRuntimeState,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginExecutionContext {
+    pub raw_text: String,
+    pub cleaned_text: String,
+    pub current_text: String,
+    pub profile: ProfileSummary,
+    pub vocabulary: Vec<DictionaryEntry>,
+    pub active_application: String,
+    pub recording_origin: RecordingOrigin,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginExecutionOutput {
+    pub text: String,
+    pub backend: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginRunRecord {
+    pub plugin_id: String,
+    pub status: PluginRunStatus,
+    pub latency_ms: u64,
+    pub backend: Option<String>,
     pub fallback_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginPipelineOutput {
+    pub final_text: String,
+    pub runs: Vec<PluginRunRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -453,6 +531,7 @@ pub struct PipelineRunResult {
     pub stt_latency_ms: u64,
     pub cleanup_latency_ms: u64,
     pub cleanup_fallback_reason: Option<String>,
+    pub plugin_runs: Vec<PluginRunRecord>,
     pub peak_level: f32,
     pub status: PipelineRunStatus,
     pub output: OutputResponse,
@@ -519,6 +598,21 @@ pub trait TranscriptionEngine: Send + Sync {
 
 pub trait CleanupEngine: Send + Sync {
     fn cleanup(&self, request: CleanupRequest) -> anyhow::Result<CleanupOutput>;
+}
+
+pub trait TextTransformPlugin: Send + Sync {
+    fn manifest(&self) -> PluginManifest;
+    fn runtime_status(&self) -> PluginRuntimeStatus;
+    fn transform(&self, context: &PluginExecutionContext) -> anyhow::Result<PluginExecutionOutput>;
+}
+
+pub trait PluginStateStore: Send + Sync {
+    fn enabled(&self, plugin_id: &str) -> anyhow::Result<bool>;
+    fn set_enabled(&self, plugin_id: &str, enabled: bool) -> anyhow::Result<()>;
+}
+
+pub trait PluginRunner: Send + Sync {
+    fn run(&self, context: PluginExecutionContext) -> anyhow::Result<PluginPipelineOutput>;
 }
 
 pub trait OutputBackend: Send + Sync {

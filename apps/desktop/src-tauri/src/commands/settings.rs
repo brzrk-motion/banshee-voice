@@ -41,12 +41,6 @@ pub fn settings_update(
         return Err(AppErrorDto::settings_invalid(error));
     }
 
-    if !previous.cleanup_llm_enabled && next.cleanup_llm_enabled {
-        state.ensure_cleanup_model(app.clone());
-    } else if previous.cleanup_llm_enabled && !next.cleanup_llm_enabled {
-        state.disable_cleanup_model();
-    }
-
     Ok(next.into())
 }
 

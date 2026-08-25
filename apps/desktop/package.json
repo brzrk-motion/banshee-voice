@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/cli": "^2.0.0",
+    "@tauri-apps/cli": "2.11.4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^26.2.0",
@@ -41,5 +41,18 @@
     "typescript": "^5.6.2",
     "vite": "^5.4.2",
     "vitest": "^2.1.1"
+  },
+  "optionalDependencies": {
+    "@tauri-apps/cli-darwin-arm64": "2.11.4",
+    "@tauri-apps/cli-darwin-x64": "2.11.4",
+    "@tauri-apps/cli-linux-arm-gnueabihf": "2.11.4",
+    "@tauri-apps/cli-linux-arm64-gnu": "2.11.4",
+    "@tauri-apps/cli-linux-arm64-musl": "2.11.4",
+    "@tauri-apps/cli-linux-riscv64-gnu": "2.11.4",
+    "@tauri-apps/cli-linux-x64-gnu": "2.11.4",
+    "@tauri-apps/cli-linux-x64-musl": "2.11.4",
+    "@tauri-apps/cli-win32-arm64-msvc": "2.11.4",
+    "@tauri-apps/cli-win32-ia32-msvc": "2.11.4",
+    "@tauri-apps/cli-win32-x64-msvc": "2.11.4"
   }
 }

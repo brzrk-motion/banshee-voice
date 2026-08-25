@@ -336,6 +336,7 @@ pub fn stop_recording(
                 stt_latency_ms: result.stt_latency_ms,
                 cleanup_latency_ms: result.cleanup_latency_ms,
                 cleanup_fallback_reason: result.cleanup_fallback_reason.clone(),
+                plugin_runs: result.plugin_runs.clone(),
                 peak_level: result.peak_level,
                 status: result.status,
                 output_method: result.output.method,
@@ -376,6 +377,8 @@ pub fn stop_recording(
             )
             .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
             app.emit("transcription_completed", dto.clone())
+                .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
+            app.emit("plugins_changed", ())
                 .map_err(|error| AppErrorDto::unknown(error.to_string()))?;
 
             if origin == RecordingOrigin::PushToTalk {

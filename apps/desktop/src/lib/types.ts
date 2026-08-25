@@ -1,4 +1,4 @@
-export type PageId = "transcribe" | "history" | "settings";
+export type PageId = "transcribe" | "history" | "plugins" | "settings";
 
 export type Settings = {
   launchAtLogin: boolean;
@@ -13,7 +13,15 @@ export type Settings = {
   audioRetentionPolicy: "never" | "24_hours" | "forever";
   preserveClipboard: boolean;
   pasteDelayMs: number;
-  cleanupLlmEnabled: boolean;
+};
+
+export type PluginSummary = {
+  manifest: { id: string; name: string; description: string; version: string; author: string; stage: string };
+  enabled: boolean;
+  runtimeState: "missing" | "downloading" | "loading" | "ready" | "error";
+  downloadedBytes: number;
+  totalBytes?: number | null;
+  message?: string | null;
 };
 
 export type AudioInputDevice = {
