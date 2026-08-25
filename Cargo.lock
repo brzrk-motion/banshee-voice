@@ -358,6 +358,7 @@ dependencies = [
  "banshee-models",
  "banshee-platform",
  "banshee-plugins",
+ "banshee-prompt-enhancer",
  "banshee-storage",
  "banshee-stt",
  "banshee-transformer",
@@ -437,19 +438,18 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "banshee-contracts",
- "serde",
- "serde_json",
 ]
 
 [[package]]
-name = "banshee-prompt-worker"
+name = "banshee-prompt-enhancer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "banshee-contracts",
- "banshee-plugins",
+ "banshee-models",
  "encoding_rs",
  "llama-cpp-2",
+ "serde",
  "serde_json",
 ]
 

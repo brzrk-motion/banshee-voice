@@ -44,6 +44,7 @@ export default function App() {
   const [vocabulary, setVocabulary] = useState<DictionaryEntry[]>([]);
   const [plugins, setPlugins] = useState<PluginSummary[]>([]);
   const [changingPlugin, setChangingPlugin] = useState<string | null>(null);
+  const [savingPluginSettings, setSavingPluginSettings] = useState<string | null>(null);
 
   useEffect(() => {
     const reportLoadError = (area: string) => (error: unknown) => {
@@ -169,6 +170,19 @@ export default function App() {
     }
   }
 
+  async function savePluginSettings(pluginId: string, pluginSettings: Record<string, string>) {
+    setSavingPluginSettings(pluginId);
+    try {
+      setPlugins(await run<PluginSummary[]>("plugin_settings_update", { pluginId, settings: pluginSettings }));
+      toast.success("Plugin settings saved");
+    } catch (error) {
+      toast.error("Plugin settings were not saved", { description: errorMessage(error) });
+      throw error;
+    } finally {
+      setSavingPluginSettings(null);
+    }
+  }
+
   return (
     <>
       <AppShell page={page} onNavigate={setPage}>
@@ -187,7 +201,7 @@ export default function App() {
           />
         ) : null}
         {page === "history" ? <HistoryPage onCopy={copyText} /> : null}
-        {page === "plugins" ? <PluginsPage plugins={plugins} changing={changingPlugin} onToggle={togglePlugin} onRetry={retryPlugin} /> : null}
+        {page === "plugins" ? <PluginsPage plugins={plugins} changing={changingPlugin} savingSettings={savingPluginSettings} onToggle={togglePlugin} onRetry={retryPlugin} onSaveSettings={savePluginSettings} /> : null}
         {page === "settings" ? <SettingsPage settings={settings} devices={devices} vocabulary={vocabulary} saving={savingSettings} onSave={saveSettings} /> : null}
       </AppShell>
       <Toaster theme="dark" position="bottom-right" richColors closeButton />

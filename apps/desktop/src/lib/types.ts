@@ -16,12 +16,30 @@ export type Settings = {
 };
 
 export type PluginSummary = {
-  manifest: { id: string; name: string; description: string; version: string; author: string; stage: string };
+  manifest: {
+    id: string;
+    name: string;
+    description: string;
+    version: string;
+    author: string;
+    stage: string;
+    settings: PluginSettingDefinition[];
+  };
+  settings: Record<string, string>;
   enabled: boolean;
   runtimeState: "missing" | "downloading" | "loading" | "ready" | "error";
   downloadedBytes: number;
   totalBytes?: number | null;
   message?: string | null;
+};
+
+export type PluginSettingDefinition = {
+  key: string;
+  label: string;
+  description?: string | null;
+  kind: "select";
+  defaultValue: string;
+  options: Array<{ value: string; label: string }>;
 };
 
 export type AudioInputDevice = {

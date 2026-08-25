@@ -20,6 +20,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "0003_plugins",
         sql: include_str!("../migrations/0003_plugins.sql"),
     },
+    Migration {
+        version: 4,
+        name: "0004_plugin_settings",
+        sql: include_str!("../migrations/0004_plugin_settings.sql"),
+    },
 ];
 
 pub fn all() -> &'static [Migration] {

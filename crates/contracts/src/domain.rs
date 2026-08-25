@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -434,12 +435,44 @@ pub struct PluginManifest {
     pub version: String,
     pub author: String,
     pub stage: String,
+    pub settings: Vec<PluginSettingDefinition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSettingDefinition {
+    pub key: String,
+    pub label: String,
+    pub description: Option<String>,
+    #[serde(flatten)]
+    pub control: PluginSettingControl,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum PluginSettingControl {
+    Select {
+        default_value: String,
+        options: Vec<PluginSettingOption>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSettingOption {
+    pub value: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginSummary {
     pub manifest: PluginManifest,
+    pub settings: BTreeMap<String, String>,
     pub enabled: bool,
     pub runtime_state: PluginRuntimeState,
     pub downloaded_bytes: u64,
@@ -603,12 +636,22 @@ pub trait CleanupEngine: Send + Sync {
 pub trait TextTransformPlugin: Send + Sync {
     fn manifest(&self) -> PluginManifest;
     fn runtime_status(&self) -> PluginRuntimeStatus;
-    fn transform(&self, context: &PluginExecutionContext) -> anyhow::Result<PluginExecutionOutput>;
+    fn transform(
+        &self,
+        context: &PluginExecutionContext,
+        settings: &BTreeMap<String, String>,
+    ) -> anyhow::Result<PluginExecutionOutput>;
 }
 
 pub trait PluginStateStore: Send + Sync {
     fn enabled(&self, plugin_id: &str) -> anyhow::Result<bool>;
     fn set_enabled(&self, plugin_id: &str, enabled: bool) -> anyhow::Result<()>;
+    fn settings(&self, plugin_id: &str) -> anyhow::Result<BTreeMap<String, String>>;
+    fn set_settings(
+        &self,
+        plugin_id: &str,
+        settings: &BTreeMap<String, String>,
+    ) -> anyhow::Result<()>;
 }
 
 pub trait PluginRunner: Send + Sync {

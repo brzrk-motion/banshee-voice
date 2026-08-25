@@ -17,12 +17,6 @@ pub const DEFAULT_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
 pub const DEFAULT_MODEL_SHA256: &str =
     "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
-pub const CLEANUP_MODEL_NAME: &str = "Qwen2.5-0.5B-Instruct-Q4_K_M";
-pub const CLEANUP_MODEL_FILE: &str = "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf";
-pub const CLEANUP_MODEL_URL: &str = "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf";
-pub const CLEANUP_MODEL_SHA256: &str =
-    "6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653";
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelCapability {
@@ -31,13 +25,13 @@ pub enum ModelCapability {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ModelDescriptor {
-    capability: ModelCapability,
-    name: &'static str,
-    directory: &'static str,
-    file: &'static str,
-    url: &'static str,
-    sha256: &'static str,
+pub struct ModelDescriptor {
+    pub capability: ModelCapability,
+    pub name: &'static str,
+    pub directory: &'static str,
+    pub file: &'static str,
+    pub url: &'static str,
+    pub sha256: &'static str,
 }
 
 const SPEECH_MODEL: ModelDescriptor = ModelDescriptor {
@@ -47,15 +41,6 @@ const SPEECH_MODEL: ModelDescriptor = ModelDescriptor {
     file: DEFAULT_MODEL_FILE,
     url: DEFAULT_MODEL_URL,
     sha256: DEFAULT_MODEL_SHA256,
-};
-
-const CLEANUP_MODEL: ModelDescriptor = ModelDescriptor {
-    capability: ModelCapability::Cleanup,
-    name: CLEANUP_MODEL_NAME,
-    directory: "llama",
-    file: CLEANUP_MODEL_FILE,
-    url: CLEANUP_MODEL_URL,
-    sha256: CLEANUP_MODEL_SHA256,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -112,11 +97,7 @@ impl ModelInstaller {
         Self::from_descriptor(data_dir, SPEECH_MODEL)
     }
 
-    pub fn cleanup(data_dir: &Path) -> Self {
-        Self::from_descriptor(data_dir, CLEANUP_MODEL)
-    }
-
-    fn from_descriptor(data_dir: &Path, descriptor: ModelDescriptor) -> Self {
+    pub fn from_descriptor(data_dir: &Path, descriptor: ModelDescriptor) -> Self {
         Self {
             descriptor,
             model_path: data_dir
@@ -280,16 +261,6 @@ mod tests {
             installer
                 .model_path()
                 .ends_with(Path::new("models/whisper/ggml-base.en.bin"))
-        );
-    }
-
-    #[test]
-    fn cleanup_model_uses_a_separate_directory() {
-        let installer = ModelInstaller::cleanup(Path::new("app-data"));
-        assert!(
-            installer
-                .model_path()
-                .ends_with(Path::new("models/llama/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"))
         );
     }
 }

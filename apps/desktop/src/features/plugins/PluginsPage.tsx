@@ -3,12 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import type { PluginSummary } from "@/lib/types";
+import { PluginSettingsDialog } from "./PluginSettingsDialog";
 
 type Props = {
   plugins: PluginSummary[];
   changing: string | null;
+  savingSettings: string | null;
   onToggle: (pluginId: string, enabled: boolean) => Promise<void>;
   onRetry: (pluginId: string) => Promise<void>;
+  onSaveSettings: (pluginId: string, settings: Record<string, string>) => Promise<void>;
 };
 
 function statusText(plugin: PluginSummary) {
@@ -19,7 +22,7 @@ function statusText(plugin: PluginSummary) {
   return ({ missing: "Preparing model", downloading: "Downloading", loading: "Loading", ready: "Ready", error: "Setup failed" })[plugin.runtimeState];
 }
 
-export function PluginsPage({ plugins, changing, onToggle, onRetry }: Props) {
+export function PluginsPage({ plugins, changing, savingSettings, onToggle, onRetry, onSaveSettings }: Props) {
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-6 lg:p-8">
       <div className="overflow-hidden rounded-2xl border bg-[radial-gradient(circle_at_top_right,var(--accent)_0,transparent_48%)] p-6">
@@ -38,6 +41,7 @@ export function PluginsPage({ plugins, changing, onToggle, onRetry }: Props) {
             <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-xs text-muted-foreground">
               <div className="flex flex-wrap gap-x-4 gap-y-1"><span>{plugin.manifest.stage}</span><span>{plugin.manifest.author} · v{plugin.manifest.version}</span></div>
               <div className="flex items-center gap-2">
+                {plugin.manifest.settings.length > 0 ? <PluginSettingsDialog plugin={plugin} saving={savingSettings === plugin.manifest.id} onSave={onSaveSettings} /> : null}
                 {plugin.enabled && plugin.runtimeState !== "ready" && plugin.runtimeState !== "error" ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
                 {plugin.enabled && plugin.runtimeState === "downloading" ? <Download className="size-3.5" /> : null}
                 <span>{statusText(plugin)}</span>

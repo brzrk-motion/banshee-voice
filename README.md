@@ -21,15 +21,15 @@ npm install
 npm run dev
 ```
 
-The root Turbo workspace also provides `npm run build`, `npm run test`, `npm run check`, and `npm run desktop:build`. On first launch, Banshee downloads the approximately 141 MiB speech model into the platform application-data directory and verifies its published SHA-256 before loading it. Enabling Prompt Enhancer on the Plugins page downloads an additional approximately 379 MiB Qwen2.5 0.5B model. After installation, transcription and plugin processing are offline.
+The root Turbo workspace also provides `npm run build`, `npm run test`, `npm run check`, and `npm run desktop:build`. On first launch, Banshee downloads the approximately 141 MiB speech model into the platform application-data directory and verifies its published SHA-256 before loading it. Enabling Prompt Enhancer on the Plugins page downloads an additional approximately 379 MiB Qwen2.5 0.5B model. Its Settings dialog selects the coding model that will receive the enhanced prompt. After installation, transcription and plugin processing are offline.
 
 ## Repository structure
 
 - `apps/desktop` contains the Tauri desktop application.
 - `packages/core` is the public Rust facade imported by Banshee applications.
 - `crates` contains private Rust implementation crates used by the core facade.
-- `crates/plugins` contains the ordered plugin registry and built-in Prompt Enhancer host integration. Plugins are compiled into Banshee in this release; external plugin discovery and loading are not yet supported.
-- `crates/prompt-worker` runs Prompt Enhancer inference in a bundled sidecar process, keeping its llama.cpp runtime isolated from Whisper's native runtime.
+- `crates/plugins` contains the generic ordered plugin registry, schema-driven settings validation, and failure-isolated execution. Plugins are compiled into Banshee in this release; external plugin discovery and loading are not yet supported.
+- `plugins/prompt-enhancer` contains the Prompt Enhancer manifest, model metadata, host integration, and bundled inference sidecar, keeping its llama.cpp runtime isolated from Whisper's native runtime.
 
 For development or model verification, download the same model into the ignored repository `models` directory:
 

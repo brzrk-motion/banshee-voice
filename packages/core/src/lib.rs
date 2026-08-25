@@ -11,6 +11,7 @@ pub use banshee_injector as injector;
 pub use banshee_models as models;
 pub use banshee_platform as platform;
 pub use banshee_plugins as plugins;
+pub use banshee_prompt_enhancer as prompt_enhancer;
 pub use banshee_storage as storage;
 pub use banshee_stt as stt;
 pub use banshee_transformer as transformer;

@@ -1,0 +1,27 @@
+[package]
+name = "banshee-prompt-enhancer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "banshee-prompt-worker"
+path = "src/main.rs"
+required-features = ["worker"]
+
+[features]
+default = []
+worker = ["dep:encoding_rs", "dep:llama-cpp-2"]
+
+[dependencies]
+anyhow.workspace = true
+banshee-contracts = { path = "../../crates/contracts" }
+banshee-models = { path = "../../crates/models" }
+encoding_rs = { workspace = true, optional = true }
+llama-cpp-2 = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true

@@ -16,6 +16,7 @@ banshee-injector = { path = "../../crates/injector" }
 banshee-models = { path = "../../crates/models" }
 banshee-platform = { path = "../../crates/platform" }
 banshee-plugins = { path = "../../crates/plugins" }
+banshee-prompt-enhancer = { path = "../../plugins/prompt-enhancer" }
 banshee-storage = { path = "../../crates/storage" }
 banshee-stt = { path = "../../crates/stt" }
 banshee-transformer = { path = "../../crates/transformer" }

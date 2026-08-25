@@ -5,7 +5,10 @@ use banshee_core::injector::ClipboardInjector;
 use banshee_core::models::{ModelCapability, ModelInstaller, ModelState, ModelsStatus};
 use banshee_core::platform::EnvActiveWindowProvider;
 use banshee_core::platform::PlatformCapabilityProbe;
-use banshee_core::plugins::{PROMPT_ENHANCER_ID, PluginRegistry, PromptEnhancer};
+use banshee_core::plugins::PluginRegistry;
+use banshee_core::prompt_enhancer::{
+    MODEL_DESCRIPTOR as PROMPT_ENHANCER_MODEL, PROMPT_ENHANCER_ID, PromptEnhancer,
+};
 use banshee_core::storage::SqliteDictionaryRepository;
 use banshee_core::storage::SqliteTranscriptionRepository;
 use banshee_core::storage::initialize_storage;
@@ -20,6 +23,7 @@ use banshee_core::{
     },
     pipeline::{PipelineServices, RecordingPipeline},
 };
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 
@@ -62,7 +66,8 @@ impl ManagedAppState {
         let capabilities = PlatformCapabilityProbe::default().detect();
         let whisper_engine = WhisperCppEngine::default();
         let speech_model_installer = ModelInstaller::new(&storage.paths.data_dir);
-        let prompt_enhancer_installer = ModelInstaller::cleanup(&storage.paths.data_dir);
+        let prompt_enhancer_installer =
+            ModelInstaller::from_descriptor(&storage.paths.data_dir, PROMPT_ENHANCER_MODEL);
         let cleanup_engine = TranscriptCleanup::default();
         let prompt_enhancer = PromptEnhancer::default();
         let plugin_state: Arc<dyn PluginStateStore> = Arc::new(storage.plugins.clone());
@@ -162,6 +167,17 @@ impl ManagedAppState {
                 self.prompt_enhancer.unload();
             }
         }
+        let _ = app.emit("plugins_changed", ());
+        self.plugins()
+    }
+
+    pub fn set_plugin_settings(
+        &self,
+        plugin_id: &str,
+        settings: BTreeMap<String, String>,
+        app: tauri::AppHandle,
+    ) -> anyhow::Result<Vec<PluginSummary>> {
+        self.plugins.set_settings(plugin_id, settings)?;
         let _ = app.emit("plugins_changed", ());
         self.plugins()
     }

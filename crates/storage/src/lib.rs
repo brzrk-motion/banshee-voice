@@ -168,6 +168,14 @@ mod tests {
             )
             .expect("prompt enhancer state");
         assert!(!enabled);
+        let settings: String = connection
+            .query_row(
+                "SELECT settings_json FROM plugin_states WHERE plugin_id = 'banshee.prompt-enhancer'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("prompt enhancer settings");
+        assert_eq!(settings, "{}");
     }
 
     #[test]

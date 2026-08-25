@@ -41,7 +41,10 @@ fn main() {
                 .plugins()
                 .map_err(setup_error)?
                 .iter()
-                .any(|plugin| plugin.enabled)
+                .any(|plugin| {
+                    plugin.manifest.id == banshee_core::prompt_enhancer::PROMPT_ENHANCER_ID
+                        && plugin.enabled
+                })
             {
                 app.state::<app_state::ManagedAppState>()
                     .ensure_prompt_enhancer(app.handle().clone());
@@ -82,6 +85,7 @@ fn main() {
             commands::models::model_download_retry,
             commands::plugins::plugins_list,
             commands::plugins::plugin_set_enabled,
+            commands::plugins::plugin_settings_update,
             commands::plugins::plugin_setup_retry,
             commands::recording::recording_start_manual,
             commands::recording::recording_stop_manual,

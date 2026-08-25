@@ -12,10 +12,10 @@ members = [
   "crates/models",
   "crates/platform",
   "crates/plugins",
-  "crates/prompt-worker",
   "crates/storage",
   "crates/contracts",
   "packages/core",
+  "plugins/prompt-enhancer",
 ]
 resolver = "2"
 

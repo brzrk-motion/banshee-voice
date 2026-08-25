@@ -9,12 +9,15 @@
   ],
   "scripts": {
     "dev": "turbo run tauri:dev --filter=@banshee/desktop",
+    "tauri:dev": "node scripts/tauri.mjs dev",
     "build": "turbo run build",
     "test": "turbo run test",
     "check": "turbo run check",
     "desktop:build": "turbo run tauri:build --filter=@banshee/desktop"
   },
   "devDependencies": {
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
     "turbo": "2.10.11"
   },
   "allowScripts": {

@@ -1,53 +1,14 @@
-//! Compiled-in text transformation plugins and their ordered runtime.
+//! Generic compiled-in text transformation plugin registry and ordered runtime.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use banshee_contracts::domain::{
-    PluginExecutionContext, PluginExecutionOutput, PluginManifest, PluginPipelineOutput,
-    PluginRunRecord, PluginRunStatus, PluginRunner, PluginRuntimeState, PluginRuntimeStatus,
-    PluginStateStore, PluginSummary, TextTransformPlugin,
+    PluginExecutionContext, PluginManifest, PluginPipelineOutput, PluginRunRecord, PluginRunStatus,
+    PluginRunner, PluginRuntimeState, PluginSettingControl, PluginStateStore, PluginSummary,
+    TextTransformPlugin,
 };
-use serde::{Deserialize, Serialize};
-use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-
-pub const PROMPT_ENHANCER_ID: &str = "banshee.prompt-enhancer";
-pub const WORKER_PROTOCOL_VERSION: u32 = 1;
-const WORKER_START_TIMEOUT: Duration = Duration::from_secs(45);
-const WORKER_REQUEST_TIMEOUT: Duration = Duration::from_secs(7);
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkerRequest {
-    pub protocol_version: u32,
-    pub request_id: u64,
-    pub context: PluginExecutionContext,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[serde(
-    tag = "type",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum WorkerResponse {
-    Ready {
-        protocol_version: u32,
-    },
-    Transformed {
-        request_id: u64,
-        text: String,
-        backend: String,
-    },
-    Error {
-        request_id: Option<u64>,
-        message: String,
-    },
-}
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Instant;
 
 pub struct PluginRegistry {
     plugins: Vec<Arc<dyn TextTransformPlugin>>,
@@ -68,9 +29,11 @@ impl PluginRegistry {
             .map(|plugin| {
                 let manifest = plugin.manifest();
                 let runtime = plugin.runtime_status();
+                let settings = resolve_settings(&manifest, &self.state.settings(&manifest.id)?);
                 Ok(PluginSummary {
                     enabled: self.state.enabled(&manifest.id)?,
                     manifest,
+                    settings,
                     runtime_state: runtime.state,
                     downloaded_bytes: runtime.downloaded_bytes,
                     total_bytes: runtime.total_bytes,
@@ -81,14 +44,36 @@ impl PluginRegistry {
     }
 
     pub fn set_enabled(&self, plugin_id: &str, enabled: bool) -> Result<()> {
-        if !self
-            .plugins
-            .iter()
-            .any(|plugin| plugin.manifest().id == plugin_id)
-        {
-            bail!("unknown plugin: {plugin_id}");
-        }
+        self.plugin(plugin_id)?;
         self.state.set_enabled(plugin_id, enabled)
+    }
+
+    pub fn set_settings(&self, plugin_id: &str, settings: BTreeMap<String, String>) -> Result<()> {
+        let manifest = self.plugin(plugin_id)?.manifest();
+        for (key, value) in &settings {
+            let definition = manifest
+                .settings
+                .iter()
+                .find(|definition| definition.key == *key)
+                .ok_or_else(|| anyhow::anyhow!("unknown setting for {plugin_id}: {key}"))?;
+            match &definition.control {
+                PluginSettingControl::Select { options, .. }
+                    if !options.iter().any(|option| option.value == *value) =>
+                {
+                    bail!("invalid value for {plugin_id}.{key}: {value}");
+                }
+                PluginSettingControl::Select { .. } => {}
+            }
+        }
+        let canonical = resolve_settings(&manifest, &settings);
+        self.state.set_settings(plugin_id, &canonical)
+    }
+
+    fn plugin(&self, plugin_id: &str) -> Result<&Arc<dyn TextTransformPlugin>> {
+        self.plugins
+            .iter()
+            .find(|plugin| plugin.manifest().id == plugin_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown plugin: {plugin_id}"))
     }
 }
 
@@ -116,7 +101,8 @@ impl PluginRunner for PluginRegistry {
                 });
                 continue;
             }
-            match plugin.transform(&context) {
+            let settings = resolve_settings(&manifest, &self.state.settings(&manifest.id)?);
+            match plugin.transform(&context, &settings) {
                 Ok(output) if valid_output(&output.text) => {
                     context.current_text = output.text;
                     runs.push(PluginRunRecord {
@@ -150,254 +136,86 @@ impl PluginRunner for PluginRegistry {
     }
 }
 
+fn resolve_settings(
+    manifest: &PluginManifest,
+    stored: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    manifest
+        .settings
+        .iter()
+        .map(|definition| {
+            let value = match &definition.control {
+                PluginSettingControl::Select {
+                    default_value,
+                    options,
+                } => stored
+                    .get(&definition.key)
+                    .filter(|value| {
+                        options
+                            .iter()
+                            .any(|option| option.value.as_str() == value.as_str())
+                    })
+                    .cloned()
+                    .unwrap_or_else(|| default_value.clone()),
+            };
+            (definition.key.clone(), value)
+        })
+        .collect()
+}
+
 fn valid_output(output: &str) -> bool {
     !output.trim().is_empty() && output.chars().count() <= 16_000
-}
-
-struct WorkerHandle {
-    child: Child,
-    stdin: ChildStdin,
-    responses: Receiver<Result<WorkerResponse, String>>,
-    next_request_id: u64,
-}
-
-impl WorkerHandle {
-    fn stop(&mut self) {
-        terminate(&mut self.child);
-    }
-}
-
-impl Drop for WorkerHandle {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
-
-#[derive(Clone)]
-pub struct PromptEnhancer {
-    worker: Arc<Mutex<Option<WorkerHandle>>>,
-    runtime: Arc<Mutex<PluginRuntimeStatus>>,
-    enabled: Arc<AtomicBool>,
-}
-
-impl Default for PromptEnhancer {
-    fn default() -> Self {
-        Self {
-            worker: Arc::new(Mutex::new(None)),
-            runtime: Arc::new(Mutex::new(PluginRuntimeStatus {
-                state: PluginRuntimeState::Missing,
-                downloaded_bytes: 0,
-                total_bytes: None,
-                message: None,
-            })),
-            enabled: Arc::new(AtomicBool::new(false)),
-        }
-    }
-}
-
-impl PromptEnhancer {
-    pub fn enable(&self) {
-        self.enabled.store(true, Ordering::SeqCst);
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled.load(Ordering::SeqCst)
-    }
-
-    pub fn set_runtime_status(&self, status: PluginRuntimeStatus) {
-        *self.runtime.lock().expect("plugin status mutex poisoned") = status;
-    }
-
-    pub fn start_worker(&self, executable: &Path, model: &Path) -> Result<()> {
-        if !self.is_enabled() {
-            bail!("prompt enhancer was disabled during setup");
-        }
-        self.stop_worker();
-        let mut child = Command::new(executable)
-            .arg("--model")
-            .arg(model)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "failed to start prompt enhancer worker at {}",
-                    executable.display()
-                )
-            })?;
-        let stdin = child.stdin.take().context("worker stdin was unavailable")?;
-        let stdout = child
-            .stdout
-            .take()
-            .context("worker stdout was unavailable")?;
-        let (sender, responses) = mpsc::channel();
-        std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                let response = line.map_err(|error| error.to_string()).and_then(|line| {
-                    serde_json::from_str(&line).map_err(|error| error.to_string())
-                });
-                if sender.send(response).is_err() {
-                    return;
-                }
-            }
-            let _ = sender.send(Err("prompt enhancer worker exited".into()));
-        });
-        match responses.recv_timeout(WORKER_START_TIMEOUT) {
-            Ok(Ok(WorkerResponse::Ready { protocol_version }))
-                if protocol_version == WORKER_PROTOCOL_VERSION => {}
-            Ok(Ok(WorkerResponse::Error { message, .. })) => {
-                terminate(&mut child);
-                bail!("prompt enhancer worker failed to initialize: {message}");
-            }
-            Ok(Ok(response)) => {
-                terminate(&mut child);
-                bail!("unexpected prompt enhancer worker response: {response:?}");
-            }
-            Ok(Err(error)) => {
-                terminate(&mut child);
-                bail!("invalid prompt enhancer worker response: {error}");
-            }
-            Err(_) => {
-                terminate(&mut child);
-                bail!("prompt enhancer worker initialization timed out");
-            }
-        }
-        if !self.is_enabled() {
-            terminate(&mut child);
-            bail!("prompt enhancer was disabled during setup");
-        }
-        *self.worker.lock().expect("plugin worker mutex poisoned") = Some(WorkerHandle {
-            child,
-            stdin,
-            responses,
-            next_request_id: 1,
-        });
-        Ok(())
-    }
-
-    pub fn unload(&self) {
-        self.enabled.store(false, Ordering::SeqCst);
-        self.stop_worker();
-        self.set_runtime_status(PluginRuntimeStatus {
-            state: PluginRuntimeState::Missing,
-            downloaded_bytes: 0,
-            total_bytes: None,
-            message: None,
-        });
-    }
-
-    fn stop_worker(&self) {
-        if let Some(mut worker) = self
-            .worker
-            .lock()
-            .expect("plugin worker mutex poisoned")
-            .take()
-        {
-            worker.stop();
-        }
-    }
-
-    fn infer(&self, context: &PluginExecutionContext) -> Result<PluginExecutionOutput> {
-        let mut guard = self.worker.lock().expect("plugin worker mutex poisoned");
-        let worker = guard
-            .as_mut()
-            .context("prompt enhancer worker is not ready")?;
-        let request_id = worker.next_request_id;
-        worker.next_request_id += 1;
-        let request = WorkerRequest {
-            protocol_version: WORKER_PROTOCOL_VERSION,
-            request_id,
-            context: context.clone(),
-        };
-        serde_json::to_writer(&mut worker.stdin, &request)?;
-        worker.stdin.write_all(b"\n")?;
-        worker.stdin.flush()?;
-        match worker.responses.recv_timeout(WORKER_REQUEST_TIMEOUT) {
-            Ok(Ok(WorkerResponse::Transformed {
-                request_id: response_id,
-                text,
-                backend,
-            })) if response_id == request_id => Ok(PluginExecutionOutput { text, backend }),
-            Ok(Ok(WorkerResponse::Error { message, .. })) => bail!(message),
-            Ok(Ok(response)) => bail!("unexpected prompt enhancer worker response: {response:?}"),
-            Ok(Err(error)) => bail!("prompt enhancer worker protocol error: {error}"),
-            Err(_) => bail!("prompt enhancement timed out"),
-        }
-    }
-}
-
-impl TextTransformPlugin for PromptEnhancer {
-    fn manifest(&self) -> PluginManifest {
-        PluginManifest {
-            id: PROMPT_ENHANCER_ID.into(),
-            name: "Prompt Enhancer".into(),
-            description: "Turns spoken ideas into clear, structured prompts for coding agents."
-                .into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-            author: "Banshee".into(),
-            stage: "After transcript cleanup".into(),
-        }
-    }
-
-    fn runtime_status(&self) -> PluginRuntimeStatus {
-        self.runtime
-            .lock()
-            .expect("plugin status mutex poisoned")
-            .clone()
-    }
-
-    fn transform(&self, context: &PluginExecutionContext) -> Result<PluginExecutionOutput> {
-        let result = self.infer(context);
-        if let Err(error) = &result {
-            self.stop_worker();
-            self.set_runtime_status(PluginRuntimeStatus {
-                state: PluginRuntimeState::Error,
-                downloaded_bytes: 0,
-                total_bytes: None,
-                message: Some(error.to_string()),
-            });
-        }
-        result
-    }
-}
-
-fn terminate(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use banshee_contracts::domain::{ProfileSummary, RecordingOrigin};
-    use std::collections::HashMap;
+    use banshee_contracts::domain::{
+        PluginExecutionOutput, PluginRuntimeStatus, PluginSettingDefinition, PluginSettingOption,
+        ProfileSummary, RecordingOrigin,
+    };
+    use std::sync::Mutex;
 
     #[derive(Default)]
-    struct MemoryState(Mutex<HashMap<String, bool>>);
-    impl PluginStateStore for MemoryState {
-        fn enabled(&self, id: &str) -> Result<bool> {
-            Ok(*self.0.lock().unwrap().get(id).unwrap_or(&false))
-        }
-        fn set_enabled(&self, id: &str, enabled: bool) -> Result<()> {
-            self.0.lock().unwrap().insert(id.into(), enabled);
-            Ok(())
-        }
+    struct MemoryState {
+        enabled: Mutex<BTreeMap<String, bool>>,
+        settings: Mutex<BTreeMap<String, BTreeMap<String, String>>>,
     }
 
-    #[test]
-    fn prompt_enhancer_is_disabled_by_default() {
-        let registry = PluginRegistry::new(
-            Arc::new(MemoryState::default()),
-            vec![Arc::new(PromptEnhancer::default())],
-        );
-        assert!(!registry.list().unwrap()[0].enabled);
+    impl PluginStateStore for MemoryState {
+        fn enabled(&self, id: &str) -> Result<bool> {
+            Ok(*self.enabled.lock().unwrap().get(id).unwrap_or(&false))
+        }
+
+        fn set_enabled(&self, id: &str, enabled: bool) -> Result<()> {
+            self.enabled.lock().unwrap().insert(id.into(), enabled);
+            Ok(())
+        }
+
+        fn settings(&self, id: &str) -> Result<BTreeMap<String, String>> {
+            Ok(self
+                .settings
+                .lock()
+                .unwrap()
+                .get(id)
+                .cloned()
+                .unwrap_or_default())
+        }
+
+        fn set_settings(&self, id: &str, settings: &BTreeMap<String, String>) -> Result<()> {
+            self.settings
+                .lock()
+                .unwrap()
+                .insert(id.into(), settings.clone());
+            Ok(())
+        }
     }
 
     struct TestPlugin {
         id: &'static str,
         suffix: &'static str,
         state: PluginRuntimeState,
+        configurable: bool,
     }
 
     impl TextTransformPlugin for TestPlugin {
@@ -409,6 +227,28 @@ mod tests {
                 version: "1".into(),
                 author: "test".into(),
                 stage: "test".into(),
+                settings: self
+                    .configurable
+                    .then(|| PluginSettingDefinition {
+                        key: "target".into(),
+                        label: "Target".into(),
+                        description: None,
+                        control: PluginSettingControl::Select {
+                            default_value: "one".into(),
+                            options: vec![
+                                PluginSettingOption {
+                                    value: "one".into(),
+                                    label: "One".into(),
+                                },
+                                PluginSettingOption {
+                                    value: "two".into(),
+                                    label: "Two".into(),
+                                },
+                            ],
+                        },
+                    })
+                    .into_iter()
+                    .collect(),
             }
         }
 
@@ -421,12 +261,29 @@ mod tests {
             }
         }
 
-        fn transform(&self, context: &PluginExecutionContext) -> Result<PluginExecutionOutput> {
+        fn transform(
+            &self,
+            context: &PluginExecutionContext,
+            settings: &BTreeMap<String, String>,
+        ) -> Result<PluginExecutionOutput> {
+            let target = settings
+                .get("target")
+                .map(|value| format!("-{value}"))
+                .unwrap_or_default();
             Ok(PluginExecutionOutput {
-                text: format!("{}{}", context.current_text, self.suffix),
+                text: format!("{}{}{}", context.current_text, self.suffix, target),
                 backend: "test".into(),
             })
         }
+    }
+
+    fn plugin(id: &'static str, suffix: &'static str) -> Arc<TestPlugin> {
+        Arc::new(TestPlugin {
+            id,
+            suffix,
+            state: PluginRuntimeState::Ready,
+            configurable: false,
+        })
     }
 
     fn context() -> PluginExecutionContext {
@@ -448,25 +305,19 @@ mod tests {
     }
 
     #[test]
+    fn plugins_are_disabled_by_default() {
+        let registry =
+            PluginRegistry::new(Arc::new(MemoryState::default()), vec![plugin("one", "")]);
+        assert!(!registry.list().unwrap()[0].enabled);
+    }
+
+    #[test]
     fn runs_enabled_plugins_in_registry_order() {
         let state = Arc::new(MemoryState::default());
         state.set_enabled("one", true).unwrap();
         state.set_enabled("two", true).unwrap();
-        let registry = PluginRegistry::new(
-            state,
-            vec![
-                Arc::new(TestPlugin {
-                    id: "one",
-                    suffix: "-one",
-                    state: PluginRuntimeState::Ready,
-                }),
-                Arc::new(TestPlugin {
-                    id: "two",
-                    suffix: "-two",
-                    state: PluginRuntimeState::Ready,
-                }),
-            ],
-        );
+        let registry =
+            PluginRegistry::new(state, vec![plugin("one", "-one"), plugin("two", "-two")]);
         let result = registry.run(context()).unwrap();
         assert_eq!(result.final_text, "clean-one-two");
         assert!(
@@ -487,6 +338,7 @@ mod tests {
                 id: "waiting",
                 suffix: "-changed",
                 state: PluginRuntimeState::Downloading,
+                configurable: false,
             })],
         );
         let result = registry.run(context()).unwrap();
@@ -495,61 +347,56 @@ mod tests {
     }
 
     #[test]
-    fn worker_protocol_uses_versioned_camel_case_json() {
-        let request = WorkerRequest {
-            protocol_version: WORKER_PROTOCOL_VERSION,
-            request_id: 42,
-            context: context(),
-        };
-        let json = serde_json::to_value(request).unwrap();
-        assert_eq!(json["protocolVersion"], 1);
-        assert_eq!(json["requestId"], 42);
-        assert_eq!(json["context"]["currentText"], "clean");
-
-        let ready = serde_json::to_value(WorkerResponse::Ready {
-            protocol_version: WORKER_PROTOCOL_VERSION,
-        })
-        .unwrap();
-        assert_eq!(
-            ready,
-            serde_json::json!({ "type": "ready", "protocolVersion": 1 })
+    fn resolves_defaults_and_passes_saved_settings_to_transform() {
+        let state = Arc::new(MemoryState::default());
+        state.set_enabled("configurable", true).unwrap();
+        let registry = PluginRegistry::new(
+            state,
+            vec![Arc::new(TestPlugin {
+                id: "configurable",
+                suffix: "",
+                state: PluginRuntimeState::Ready,
+                configurable: true,
+            })],
         );
+
+        assert_eq!(registry.list().unwrap()[0].settings["target"], "one");
+        registry
+            .set_settings(
+                "configurable",
+                BTreeMap::from([("target".into(), "two".into())]),
+            )
+            .unwrap();
+        assert_eq!(registry.run(context()).unwrap().final_text, "clean-two");
     }
 
-    #[cfg(unix)]
     #[test]
-    fn prompt_enhancer_communicates_with_and_stops_worker() {
-        use std::fs;
-        use std::os::unix::fs::PermissionsExt;
+    fn rejects_unknown_keys_and_invalid_select_values() {
+        let registry = PluginRegistry::new(
+            Arc::new(MemoryState::default()),
+            vec![Arc::new(TestPlugin {
+                id: "configurable",
+                suffix: "",
+                state: PluginRuntimeState::Ready,
+                configurable: true,
+            })],
+        );
 
-        let script =
-            std::env::temp_dir().join(format!("banshee-fake-prompt-worker-{}", std::process::id()));
-        fs::write(
-            &script,
-            "#!/bin/sh\necho '{\"type\":\"ready\",\"protocolVersion\":1}'\nIFS= read -r request\necho '{\"type\":\"transformed\",\"requestId\":1,\"text\":\"enhanced\",\"backend\":\"fake\"}'\n",
-        )
-        .unwrap();
-        let mut permissions = fs::metadata(&script).unwrap().permissions();
-        permissions.set_mode(0o700);
-        fs::set_permissions(&script, permissions).unwrap();
-
-        let enhancer = PromptEnhancer::default();
-        enhancer.enable();
-        enhancer
-            .start_worker(&script, Path::new("unused.gguf"))
-            .unwrap();
-        enhancer.set_runtime_status(PluginRuntimeStatus {
-            state: PluginRuntimeState::Ready,
-            downloaded_bytes: 0,
-            total_bytes: None,
-            message: None,
-        });
-        let output = enhancer.transform(&context()).unwrap();
-        assert_eq!(output.text, "enhanced");
-        assert_eq!(output.backend, "fake");
-
-        enhancer.unload();
-        assert_eq!(enhancer.runtime_status().state, PluginRuntimeState::Missing);
-        fs::remove_file(script).unwrap();
+        assert!(
+            registry
+                .set_settings(
+                    "configurable",
+                    BTreeMap::from([("unknown".into(), "two".into())]),
+                )
+                .is_err()
+        );
+        assert!(
+            registry
+                .set_settings(
+                    "configurable",
+                    BTreeMap::from([("target".into(), "three".into())]),
+                )
+                .is_err()
+        );
     }
 }

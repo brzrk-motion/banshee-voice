@@ -35,7 +35,7 @@ export function buildPromptWorker(repositoryRoot, environment, release, tauriArg
     throw new Error("Universal macOS builds require a universal prompt worker binary");
   }
 
-  const cargoArgs = ["build", "-p", "banshee-prompt-worker"];
+  const cargoArgs = ["build", "-p", "banshee-prompt-enhancer", "--features", "worker", "--bin", "banshee-prompt-worker"];
   if (release) cargoArgs.push("--release");
   if (requestedTarget(tauriArgs)) cargoArgs.push("--target", target);
   run("cargo", cargoArgs, { cwd: repositoryRoot, env: environment });

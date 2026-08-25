@@ -1,12 +1,15 @@
 use anyhow::{Context, Result, bail};
 use banshee_contracts::domain::PluginExecutionContext;
-use banshee_plugins::{WORKER_PROTOCOL_VERSION, WorkerRequest, WorkerResponse};
+use banshee_prompt_enhancer::{
+    WORKER_PROTOCOL_VERSION, WorkerRequest, WorkerResponse, enhancement_prompt,
+};
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -28,9 +31,13 @@ impl PromptModel {
         Ok(Self { model, backend })
     }
 
-    fn infer(&self, context: &PluginExecutionContext) -> Result<String> {
+    fn infer(
+        &self,
+        context: &PluginExecutionContext,
+        settings: &BTreeMap<String, String>,
+    ) -> Result<String> {
         let started = Instant::now();
-        let prompt = enhancement_prompt(context);
+        let prompt = enhancement_prompt(context, settings);
         let params = LlamaContextParams::default()
             .with_n_ctx(Some(NonZeroU32::new(4096).expect("nonzero context")))
             .with_n_threads(8)
@@ -124,7 +131,7 @@ fn main() -> Result<()> {
             )?;
             continue;
         }
-        let response = match model.infer(&request.context) {
+        let response = match model.infer(&request.context, &request.settings) {
             Ok(text) => WorkerResponse::Transformed {
                 request_id: request.request_id,
                 text,
@@ -153,39 +160,4 @@ fn write_response(writer: &mut impl Write, response: &WorkerResponse) -> Result<
     writer.write_all(b"\n")?;
     writer.flush()?;
     Ok(())
-}
-
-fn enhancement_prompt(context: &PluginExecutionContext) -> String {
-    format!(
-        "<|im_start|>system\nRewrite the spoken request as a precise prompt for a coding agent. Preserve the user's intent and all concrete requirements. Add useful structure, acceptance criteria, and constraints only when they follow from the request. Do not invent technologies, files, facts, or requirements. Return only the enhanced prompt; never answer it.<|im_end|>\n<|im_start|>user\nActive application: {}\nSpoken request:\n{}<|im_end|>\n<|im_start|>assistant\n",
-        context.active_application, context.current_text
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use banshee_contracts::domain::{ProfileSummary, RecordingOrigin};
-
-    #[test]
-    fn prompt_preserves_context_and_instructs_model_not_to_answer() {
-        let prompt = enhancement_prompt(&PluginExecutionContext {
-            raw_text: "raw".into(),
-            cleaned_text: "clean".into(),
-            current_text: "add retry handling".into(),
-            profile: ProfileSummary {
-                id: "agent".into(),
-                name: "Agent".into(),
-                slug: "agent".into(),
-                description: String::new(),
-                built_in: true,
-            },
-            vocabulary: vec![],
-            active_application: "Editor".into(),
-            recording_origin: RecordingOrigin::Scratch,
-        });
-        assert!(prompt.contains("add retry handling"));
-        assert!(prompt.contains("Active application: Editor"));
-        assert!(prompt.contains("never answer it"));
-    }
 }

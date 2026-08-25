@@ -1,5 +1,6 @@
 use crate::app_state::{ManagedAppState, ipc::AppErrorDto};
 use banshee_core::domain::PluginSummary;
+use std::collections::BTreeMap;
 
 #[tauri::command]
 pub fn plugins_list(
@@ -19,6 +20,18 @@ pub fn plugin_set_enabled(
 ) -> Result<Vec<PluginSummary>, AppErrorDto> {
     state
         .set_plugin_enabled(&plugin_id, enabled, app)
+        .map_err(|error| AppErrorDto::unknown(error.to_string()))
+}
+
+#[tauri::command]
+pub fn plugin_settings_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ManagedAppState>,
+    plugin_id: String,
+    settings: BTreeMap<String, String>,
+) -> Result<Vec<PluginSummary>, AppErrorDto> {
+    state
+        .set_plugin_settings(&plugin_id, settings, app)
         .map_err(|error| AppErrorDto::unknown(error.to_string()))
 }
 
