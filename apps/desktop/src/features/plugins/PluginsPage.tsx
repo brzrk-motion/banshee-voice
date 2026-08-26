@@ -28,7 +28,7 @@ export function PluginsPage({ plugins, changing, savingSettings, onToggle, onRet
       <div className="overflow-hidden rounded-2xl border bg-[radial-gradient(circle_at_top_right,var(--accent)_0,transparent_48%)] p-6">
         <div className="mb-4 grid size-11 place-items-center rounded-xl bg-foreground text-background"><Sparkles className="size-5" /></div>
         <h2 className="text-xl font-semibold tracking-tight">Shape your words after transcription</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Plugins run locally in a fixed sequence after Banshee cleans the transcript. If a plugin is unavailable, your cleaned text still goes through.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Plugins run locally in a fixed sequence after transcription. Turn Transcript Cleanup off to pass the raw transcript directly to later plugins and output.</p>
       </div>
       {plugins.length === 0 ? <Card><CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground"><Box />No plugins are registered in this build.</CardContent></Card> : null}
       {plugins.map((plugin) => (

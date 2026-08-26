@@ -361,7 +361,7 @@ dependencies = [
  "banshee-prompt-enhancer",
  "banshee-storage",
  "banshee-stt",
- "banshee-transformer",
+ "banshee-transcript-cleanup",
  "banshee-vad",
  "serde",
  "thiserror 2.0.20",
@@ -438,6 +438,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "banshee-contracts",
+ "banshee-transcript-cleanup",
 ]
 
 [[package]]
@@ -477,7 +478,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "banshee-transformer"
+name = "banshee-transcript-cleanup"
 version = "0.1.0"
 dependencies = [
  "anyhow",

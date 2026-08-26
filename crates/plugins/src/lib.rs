@@ -80,6 +80,7 @@ impl PluginRegistry {
 impl PluginRunner for PluginRegistry {
     fn run(&self, mut context: PluginExecutionContext) -> Result<PluginPipelineOutput> {
         let mut runs = Vec::new();
+        let mut applied_outputs = BTreeMap::new();
         for plugin in &self.plugins {
             let manifest = plugin.manifest();
             if !self.state.enabled(&manifest.id)? {
@@ -105,6 +106,7 @@ impl PluginRunner for PluginRegistry {
             match plugin.transform(&context, &settings) {
                 Ok(output) if valid_output(&output.text) => {
                     context.current_text = output.text;
+                    applied_outputs.insert(manifest.id.clone(), context.current_text.clone());
                     runs.push(PluginRunRecord {
                         plugin_id: manifest.id,
                         status: PluginRunStatus::Applied,
@@ -132,6 +134,7 @@ impl PluginRunner for PluginRegistry {
         Ok(PluginPipelineOutput {
             final_text: context.current_text,
             runs,
+            applied_outputs,
         })
     }
 }
@@ -326,6 +329,28 @@ mod tests {
                 .iter()
                 .all(|run| run.status == PluginRunStatus::Applied)
         );
+    }
+
+    #[test]
+    fn transcript_cleanup_only_transforms_when_enabled() {
+        use banshee_transcript_cleanup::{TRANSCRIPT_CLEANUP_ID, TranscriptCleanup};
+
+        let state = Arc::new(MemoryState::default());
+        let registry = PluginRegistry::new(state.clone(), vec![Arc::new(TranscriptCleanup)]);
+        let mut input = context();
+        input.raw_text = "um ship it period".into();
+        input.cleaned_text = input.raw_text.clone();
+        input.current_text = input.raw_text.clone();
+
+        let disabled = registry.run(input.clone()).unwrap();
+        assert_eq!(disabled.final_text, "um ship it period");
+        assert!(disabled.runs.is_empty());
+
+        state.set_enabled(TRANSCRIPT_CLEANUP_ID, true).unwrap();
+        let enabled = registry.run(input).unwrap();
+        assert_eq!(enabled.final_text, "ship it.");
+        assert_eq!(enabled.runs[0].status, PluginRunStatus::Applied);
+        assert_eq!(enabled.applied_outputs[TRANSCRIPT_CLEANUP_ID], "ship it.");
     }
 
     #[test]

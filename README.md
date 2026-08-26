@@ -1,6 +1,6 @@
 # Banshee Voice
 
-Banshee is a local Tauri desktop application that records microphone audio and transcribes it with Whisper `base.en`. Transcripts pass through deterministic cleanup and then through any enabled text transformation plugins before output.
+Banshee is a local Tauri desktop application that records microphone audio and transcribes it with Whisper `base.en`. Transcripts pass through enabled text transformation plugins before output. The built-in Transcript Cleanup plugin performs deterministic cleanup and can be turned off to preserve the raw transcription.
 
 The desktop window includes an editable scratch space. Separately, the global push-to-talk shortcut opens a compact bottom-center HUD: hold the shortcut to record, then release it to transcribe and paste into the text field that was focused when recording began. If that target is unavailable or changed, Banshee leaves the transcript on the clipboard. Closing or minimizing the desktop window keeps Banshee available from the system tray; use the tray's Quit command to stop it.
 
@@ -29,6 +29,7 @@ The root Turbo workspace also provides `npm run build`, `npm run test`, `npm run
 - `packages/core` is the public Rust facade imported by Banshee applications.
 - `crates` contains private Rust implementation crates used by the core facade.
 - `crates/plugins` contains the generic ordered plugin registry, schema-driven settings validation, and failure-isolated execution. Plugins are compiled into Banshee in this release; external plugin discovery and loading are not yet supported.
+- `plugins/transcript-cleanup` contains the built-in deterministic Transcript Cleanup plugin. It runs first when enabled and requires no model download.
 - `plugins/prompt-enhancer` contains the Prompt Enhancer manifest, model metadata, host integration, and bundled inference sidecar, keeping its llama.cpp runtime isolated from Whisper's native runtime.
 
 For development or model verification, download the same model into the ignored repository `models` directory:

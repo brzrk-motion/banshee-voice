@@ -14,7 +14,7 @@ pub use banshee_plugins as plugins;
 pub use banshee_prompt_enhancer as prompt_enhancer;
 pub use banshee_storage as storage;
 pub use banshee_stt as stt;
-pub use banshee_transformer as transformer;
+pub use banshee_transcript_cleanup as transcript_cleanup;
 pub use banshee_vad as vad;
 
 use std::sync::Arc;

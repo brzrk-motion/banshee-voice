@@ -176,6 +176,14 @@ mod tests {
             )
             .expect("prompt enhancer settings");
         assert_eq!(settings, "{}");
+        let cleanup_enabled: bool = connection
+            .query_row(
+                "SELECT enabled FROM plugin_states WHERE plugin_id = 'banshee.transcript-cleanup'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("transcript cleanup state");
+        assert!(cleanup_enabled);
     }
 
     #[test]

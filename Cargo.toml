@@ -4,7 +4,6 @@ members = [
   "crates/audio",
   "crates/vad",
   "crates/stt",
-  "crates/transformer",
   "crates/context",
   "crates/dictionary",
   "crates/injector",
@@ -16,6 +15,7 @@ members = [
   "crates/contracts",
   "packages/core",
   "plugins/prompt-enhancer",
+  "plugins/transcript-cleanup",
 ]
 resolver = "2"
 

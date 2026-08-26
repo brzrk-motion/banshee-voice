@@ -8,3 +8,6 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 banshee-contracts = { path = "../contracts" }
+
+[dev-dependencies]
+banshee-transcript-cleanup = { path = "../../plugins/transcript-cleanup" }

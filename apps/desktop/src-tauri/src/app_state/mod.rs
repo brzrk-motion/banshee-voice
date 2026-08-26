@@ -13,7 +13,7 @@ use banshee_core::storage::SqliteDictionaryRepository;
 use banshee_core::storage::SqliteTranscriptionRepository;
 use banshee_core::storage::initialize_storage;
 use banshee_core::stt::WhisperCppEngine;
-use banshee_core::transformer::TranscriptCleanup;
+use banshee_core::transcript_cleanup::TranscriptCleanup;
 use banshee_core::vad::SimpleVadProcessor;
 use banshee_core::{
     AppServices,
@@ -68,12 +68,15 @@ impl ManagedAppState {
         let speech_model_installer = ModelInstaller::new(&storage.paths.data_dir);
         let prompt_enhancer_installer =
             ModelInstaller::from_descriptor(&storage.paths.data_dir, PROMPT_ENHANCER_MODEL);
-        let cleanup_engine = TranscriptCleanup::default();
+        let transcript_cleanup = TranscriptCleanup;
         let prompt_enhancer = PromptEnhancer::default();
         let plugin_state: Arc<dyn PluginStateStore> = Arc::new(storage.plugins.clone());
         let plugins = Arc::new(PluginRegistry::new(
             plugin_state,
-            vec![Arc::new(prompt_enhancer.clone())],
+            vec![
+                Arc::new(transcript_cleanup),
+                Arc::new(prompt_enhancer.clone()),
+            ],
         ));
         let recording_pipeline = Arc::new(RecordingPipeline::new(PipelineServices {
             settings: Arc::new(storage.settings.clone()),
@@ -83,7 +86,6 @@ impl ManagedAppState {
             audio: Arc::new(CpalAudioCapture::default()),
             vad: Arc::new(SimpleVadProcessor),
             stt: Arc::new(whisper_engine.clone()),
-            cleanup: Arc::new(cleanup_engine.clone()),
             plugins: plugins.clone(),
             injector: Arc::new(ClipboardInjector),
             active_window: Arc::new(EnvActiveWindowProvider),

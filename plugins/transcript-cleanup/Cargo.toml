@@ -1,5 +1,5 @@
 [package]
-name = "banshee-transformer"
+name = "banshee-transcript-cleanup"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,4 +7,5 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
-banshee-contracts = { path = "../contracts" }
+banshee-contracts = { path = "../../crates/contracts" }
+

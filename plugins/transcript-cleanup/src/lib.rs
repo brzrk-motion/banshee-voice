@@ -1,28 +1,56 @@
-//! Deterministic transcript cleanup for Banshee.
+//! Built-in deterministic transcript cleanup plugin.
 
 use anyhow::Result;
-use banshee_contracts::domain::{CleanupEngine, CleanupOutput, CleanupRequest};
-use std::time::Instant;
+use banshee_contracts::domain::{
+    PluginExecutionContext, PluginExecutionOutput, PluginManifest, PluginRuntimeState,
+    PluginRuntimeStatus, TextTransformPlugin,
+};
+use std::collections::BTreeMap;
+
+pub const TRANSCRIPT_CLEANUP_ID: &str = "banshee.transcript-cleanup";
 
 #[derive(Clone, Default)]
 pub struct TranscriptCleanup;
 
-impl CleanupEngine for TranscriptCleanup {
-    fn cleanup(&self, request: CleanupRequest) -> Result<CleanupOutput> {
-        let started = Instant::now();
-        Ok(CleanupOutput {
-            deterministic_text: deterministic_cleanup(&request),
+impl TextTransformPlugin for TranscriptCleanup {
+    fn manifest(&self) -> PluginManifest {
+        PluginManifest {
+            id: TRANSCRIPT_CLEANUP_ID.into(),
+            name: "Transcript Cleanup".into(),
+            description: "Removes filler words, applies spoken punctuation and dictionary terms, and normalizes the transcript before other plugins run.".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            author: "Banshee".into(),
+            stage: "First after transcription".into(),
+            settings: vec![],
+        }
+    }
+
+    fn runtime_status(&self) -> PluginRuntimeStatus {
+        PluginRuntimeStatus {
+            state: PluginRuntimeState::Ready,
+            downloaded_bytes: 0,
+            total_bytes: None,
+            message: None,
+        }
+    }
+
+    fn transform(
+        &self,
+        context: &PluginExecutionContext,
+        _settings: &BTreeMap<String, String>,
+    ) -> Result<PluginExecutionOutput> {
+        Ok(PluginExecutionOutput {
+            text: deterministic_cleanup(context),
             backend: "deterministic".into(),
-            latency_ms: started.elapsed().as_millis() as u64,
         })
     }
 }
 
-fn deterministic_cleanup(request: &CleanupRequest) -> String {
-    if request.profile.slug == "raw" {
-        return request.raw_text.trim().to_string();
+fn deterministic_cleanup(context: &PluginExecutionContext) -> String {
+    if context.profile.slug == "raw" {
+        return context.current_text.trim().to_string();
     }
-    let mut text = request.raw_text.trim().to_string();
+    let mut text = context.current_text.trim().to_string();
     let lowered = text.to_ascii_lowercase();
     for marker in ["scratch that", "correction"] {
         if let Some(index) = lowered.rfind(marker) {
@@ -47,13 +75,13 @@ fn deterministic_cleanup(request: &CleanupRequest) -> String {
     ] {
         text = replace_case_insensitive(&text, spoken, punctuation, false);
     }
-    let mut vocabulary = request.vocabulary.clone();
+    let mut vocabulary = context.vocabulary.clone();
     vocabulary.sort_by_key(|entry| std::cmp::Reverse(entry.spoken_form.len()));
     for entry in vocabulary {
         text = replace_case_insensitive(&text, &entry.spoken_form, &entry.output_form, true);
     }
     text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if request.profile.slug == "commit" {
+    if context.profile.slug == "commit" {
         text.trim_end_matches('.').to_string()
     } else if text.ends_with(['.', '!', '?']) || text.is_empty() {
         text
@@ -82,11 +110,11 @@ fn replace_case_insensitive(
             || (text[..start]
                 .chars()
                 .next_back()
-                .is_none_or(|c| !c.is_alphanumeric())
+                .is_none_or(|character| !character.is_alphanumeric())
                 && text[end..]
                     .chars()
                     .next()
-                    .is_none_or(|c| !c.is_alphanumeric()));
+                    .is_none_or(|character| !character.is_alphanumeric()));
         if boundary_ok {
             result.push_str(&text[cursor..start]);
             result.push_str(replacement);
@@ -103,11 +131,15 @@ fn replace_case_insensitive(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use banshee_contracts::domain::{DictionaryEntry, ProfileSummary};
+    use banshee_contracts::domain::{
+        DictionaryEntry, ProfileSummary, RecordingOrigin, TextTransformPlugin,
+    };
 
-    fn request(raw_text: &str) -> CleanupRequest {
-        CleanupRequest {
-            raw_text: raw_text.into(),
+    fn context(current_text: &str) -> PluginExecutionContext {
+        PluginExecutionContext {
+            raw_text: current_text.into(),
+            cleaned_text: current_text.into(),
+            current_text: current_text.into(),
             profile: ProfileSummary {
                 id: "profile-agent".into(),
                 name: "Agent".into(),
@@ -120,23 +152,32 @@ mod tests {
                 output_form: "Banshee HUD".into(),
             }],
             active_application: "Editor".into(),
+            recording_origin: RecordingOrigin::Scratch,
         }
+    }
+
+    #[test]
+    fn is_an_always_ready_plugin_without_settings() {
+        let plugin = TranscriptCleanup;
+        assert_eq!(plugin.manifest().id, TRANSCRIPT_CLEANUP_ID);
+        assert!(plugin.manifest().settings.is_empty());
+        assert_eq!(plugin.runtime_status().state, PluginRuntimeState::Ready);
     }
 
     #[test]
     fn preserves_case_and_applies_vocabulary() {
         let output = TranscriptCleanup
-            .cleanup(request("Um banci hud works period"))
+            .transform(&context("Um banci hud works period"), &BTreeMap::new())
             .expect("cleanup");
-        assert_eq!(output.deterministic_text, "Banshee HUD works.");
+        assert_eq!(output.text, "Banshee HUD works.");
         assert_eq!(output.backend, "deterministic");
     }
 
     #[test]
     fn does_not_strip_like_inside_words() {
         let output = TranscriptCleanup
-            .cleanup(request("I dislike regressions"))
+            .transform(&context("I dislike regressions"), &BTreeMap::new())
             .expect("cleanup");
-        assert_eq!(output.deterministic_text, "I dislike regressions.");
+        assert_eq!(output.text, "I dislike regressions.");
     }
 }

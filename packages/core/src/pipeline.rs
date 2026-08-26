@@ -2,13 +2,13 @@ use anyhow::{Result, anyhow};
 use std::sync::Arc;
 
 use crate::domain::{
-    ActiveWindowProvider, AudioCapture, AudioCaptureRequest, AudioInputDevice, CleanupEngine,
-    CleanupRequest, DictionaryStore, HudState, HudStateChanged, OutputBackend, OutputRequest,
-    PipelineRunResult, PipelineRunStatus, PlatformCapabilities, PluginExecutionContext,
-    PluginRunStatus, PluginRunner, ProfileStore, RecordingOrigin, RecordingSession,
-    RecordingSnapshot, RecordingState, SettingsStore, TranscriptionEngine, TranscriptionRequest,
-    VadProcessor,
+    ActiveWindowProvider, AudioCapture, AudioCaptureRequest, AudioInputDevice, DictionaryStore,
+    HudState, HudStateChanged, OutputBackend, OutputRequest, PipelineRunResult, PipelineRunStatus,
+    PlatformCapabilities, PluginExecutionContext, PluginRunStatus, PluginRunner, ProfileStore,
+    RecordingOrigin, RecordingSession, RecordingSnapshot, RecordingState, SettingsStore,
+    TranscriptionEngine, TranscriptionRequest, VadProcessor,
 };
+use crate::transcript_cleanup::TRANSCRIPT_CLEANUP_ID;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PipelineError {
@@ -24,7 +24,6 @@ pub struct PipelineServices {
     pub audio: Arc<dyn AudioCapture>,
     pub vad: Arc<dyn VadProcessor>,
     pub stt: Arc<dyn TranscriptionEngine>,
-    pub cleanup: Arc<dyn CleanupEngine>,
     pub plugins: Arc<dyn PluginRunner>,
     pub injector: Arc<dyn OutputBackend>,
     pub active_window: Arc<dyn ActiveWindowProvider>,
@@ -104,21 +103,36 @@ impl RecordingPipeline {
         })?;
 
         let profile_id = profile.id.clone();
-        let cleanup = self.services.cleanup.cleanup(CleanupRequest {
-            raw_text: transcription.raw_text.clone(),
-            profile: profile.clone(),
-            vocabulary: vocabulary.clone(),
-            active_application: active_window.application_name.clone(),
-        })?;
         let plugins = self.services.plugins.run(PluginExecutionContext {
             raw_text: transcription.raw_text.clone(),
-            cleaned_text: cleanup.deterministic_text.clone(),
-            current_text: cleanup.deterministic_text.clone(),
+            cleaned_text: transcription.raw_text.clone(),
+            current_text: transcription.raw_text.clone(),
             profile: profile.clone(),
             vocabulary: vocabulary.clone(),
             active_application: active_window.application_name.clone(),
             recording_origin: session.origin,
         })?;
+        let cleanup_run = plugins
+            .runs
+            .iter()
+            .find(|run| run.plugin_id == TRANSCRIPT_CLEANUP_ID);
+        let deterministic_text = plugins
+            .applied_outputs
+            .get(TRANSCRIPT_CLEANUP_ID)
+            .cloned()
+            .unwrap_or_else(|| transcription.raw_text.clone());
+        let cleanup_backend = cleanup_run
+            .and_then(|run| run.backend.clone())
+            .unwrap_or_else(|| {
+                if cleanup_run.is_some() {
+                    "unavailable"
+                } else {
+                    "disabled"
+                }
+                .into()
+            });
+        let cleanup_latency_ms = cleanup_run.map_or(0, |run| run.latency_ms);
+        let cleanup_fallback_reason = cleanup_run.and_then(|run| run.fallback_reason.clone());
 
         let output = if session.origin == RecordingOrigin::PushToTalk {
             self.services.injector.insert_text(OutputRequest {
@@ -141,13 +155,13 @@ impl RecordingPipeline {
             session_id: session.capture.id.clone(),
             origin: session.origin,
             raw_text: transcription.raw_text,
-            deterministic_text: cleanup.deterministic_text,
+            deterministic_text,
             final_text: plugins.final_text.clone(),
             stt_backend: transcription.backend,
-            cleanup_backend: cleanup.backend,
+            cleanup_backend,
             stt_latency_ms: transcription.latency_ms,
-            cleanup_latency_ms: cleanup.latency_ms,
-            cleanup_fallback_reason: None,
+            cleanup_latency_ms,
+            cleanup_fallback_reason,
             plugin_runs: plugins.runs.clone(),
             peak_level: vad_result.peak_level,
             status: if output.result == crate::domain::OutputResultKind::Success
@@ -206,8 +220,8 @@ fn build_initial_prompt(vocabulary: &[crate::domain::DictionaryEntry]) -> String
 mod tests {
     use super::*;
     use crate::domain::{
-        ActiveWindowInfo, CaptureSession, CleanupOutput, OutputMethod, OutputResponse,
-        OutputResultKind, PluginPipelineOutput, ProfileSummary, SessionType, Settings,
+        ActiveWindowInfo, CaptureSession, OutputMethod, OutputResponse, OutputResultKind,
+        PluginPipelineOutput, PluginRunRecord, ProfileSummary, SessionType, Settings,
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -323,25 +337,23 @@ mod tests {
         }
     }
 
-    struct TestCleanup;
-
-    impl CleanupEngine for TestCleanup {
-        fn cleanup(&self, _request: CleanupRequest) -> Result<CleanupOutput> {
-            Ok(CleanupOutput {
-                deterministic_text: "ship it.".to_string(),
-                backend: "deterministic".to_string(),
-                latency_ms: 1,
-            })
-        }
-    }
-
     struct TestPluginRunner;
 
     impl PluginRunner for TestPluginRunner {
-        fn run(&self, context: PluginExecutionContext) -> Result<PluginPipelineOutput> {
+        fn run(&self, _context: PluginExecutionContext) -> Result<PluginPipelineOutput> {
             Ok(PluginPipelineOutput {
-                final_text: context.current_text,
-                runs: vec![],
+                final_text: "ship it.".into(),
+                runs: vec![PluginRunRecord {
+                    plugin_id: TRANSCRIPT_CLEANUP_ID.into(),
+                    status: PluginRunStatus::Applied,
+                    latency_ms: 1,
+                    backend: Some("deterministic".into()),
+                    fallback_reason: None,
+                }],
+                applied_outputs: std::collections::BTreeMap::from([(
+                    TRANSCRIPT_CLEANUP_ID.into(),
+                    "ship it.".into(),
+                )]),
             })
         }
     }
@@ -403,7 +415,6 @@ mod tests {
             audio: Arc::new(TestAudioCapture),
             vad: Arc::new(TestVad { speech_detected }),
             stt: Arc::new(TestStt),
-            cleanup: Arc::new(TestCleanup),
             plugins: Arc::new(TestPluginRunner),
             injector: Arc::new(TestOutputBackend { result, calls }),
             active_window: Arc::new(TestActiveWindowProvider),

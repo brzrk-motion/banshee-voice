@@ -391,23 +391,6 @@ pub struct TranscriptionOutput {
     pub latency_ms: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct CleanupRequest {
-    pub raw_text: String,
-    pub profile: ProfileSummary,
-    pub vocabulary: Vec<DictionaryEntry>,
-    pub active_application: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct CleanupOutput {
-    pub deterministic_text: String,
-    pub backend: String,
-    pub latency_ms: u64,
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginRunStatus {
@@ -523,6 +506,7 @@ pub struct PluginRunRecord {
 pub struct PluginPipelineOutput {
     pub final_text: String,
     pub runs: Vec<PluginRunRecord>,
+    pub applied_outputs: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -627,10 +611,6 @@ pub trait VadProcessor: Send + Sync {
 
 pub trait TranscriptionEngine: Send + Sync {
     fn transcribe(&self, request: TranscriptionRequest) -> anyhow::Result<TranscriptionOutput>;
-}
-
-pub trait CleanupEngine: Send + Sync {
-    fn cleanup(&self, request: CleanupRequest) -> anyhow::Result<CleanupOutput>;
 }
 
 pub trait TextTransformPlugin: Send + Sync {

@@ -25,6 +25,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "0004_plugin_settings",
         sql: include_str!("../migrations/0004_plugin_settings.sql"),
     },
+    Migration {
+        version: 5,
+        name: "0005_transcript_cleanup_plugin",
+        sql: include_str!("../migrations/0005_transcript_cleanup_plugin.sql"),
+    },
 ];
 
 pub fn all() -> &'static [Migration] {

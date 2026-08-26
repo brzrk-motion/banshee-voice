@@ -17,9 +17,9 @@ banshee-models = { path = "../../crates/models" }
 banshee-platform = { path = "../../crates/platform" }
 banshee-plugins = { path = "../../crates/plugins" }
 banshee-prompt-enhancer = { path = "../../plugins/prompt-enhancer" }
+banshee-transcript-cleanup = { path = "../../plugins/transcript-cleanup" }
 banshee-storage = { path = "../../crates/storage" }
 banshee-stt = { path = "../../crates/stt" }
-banshee-transformer = { path = "../../crates/transformer" }
 banshee-vad = { path = "../../crates/vad" }
 serde.workspace = true
 thiserror.workspace = true
