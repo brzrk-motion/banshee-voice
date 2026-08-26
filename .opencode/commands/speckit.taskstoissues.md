@@ -1,5 +1,5 @@
 ---
-description: Convert existing tasks into actionable, dependency-ordered GitHub issues for the feature based on available design artifacts.
+description: Convert existing tasks into actionable, dependency-ordered GitHub issues for the feature based on available design artifacts. Use `.opencode/skills/plugin-development/SKILL.md` for plugin-related work.
 tools: ['github/github-mcp-server/list_issues', 'github/github-mcp-server/issue_write']
 ---
 

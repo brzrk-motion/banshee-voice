@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -32,6 +33,13 @@ pub const MODEL_DESCRIPTOR: ModelDescriptor = ModelDescriptor {
 
 const WORKER_START_TIMEOUT: Duration = Duration::from_secs(45);
 const WORKER_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const WORKER_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+#[derive(Clone)]
+struct WorkerPaths {
+    executable: PathBuf,
+    model: PathBuf,
+}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +93,9 @@ impl Drop for WorkerHandle {
 #[derive(Clone)]
 pub struct PromptEnhancer {
     worker: Arc<Mutex<Option<WorkerHandle>>>,
+    worker_paths: Arc<Mutex<Option<WorkerPaths>>>,
+    worker_generation: Arc<AtomicU64>,
+    last_activity: Arc<Mutex<Option<std::time::Instant>>>,
     runtime: Arc<Mutex<PluginRuntimeStatus>>,
     enabled: Arc<AtomicBool>,
 }
@@ -93,6 +104,9 @@ impl Default for PromptEnhancer {
     fn default() -> Self {
         Self {
             worker: Arc::new(Mutex::new(None)),
+            worker_paths: Arc::new(Mutex::new(None)),
+            worker_generation: Arc::new(AtomicU64::new(0)),
+            last_activity: Arc::new(Mutex::new(None)),
             runtime: Arc::new(Mutex::new(PluginRuntimeStatus {
                 state: PluginRuntimeState::Missing,
                 downloaded_bytes: 0,
@@ -121,15 +135,15 @@ impl PromptEnhancer {
         if !self.is_enabled() {
             bail!("prompt enhancer was disabled during setup");
         }
+        *self
+            .worker_paths
+            .lock()
+            .expect("plugin worker paths mutex poisoned") = Some(WorkerPaths {
+            executable: executable.to_path_buf(),
+            model: model.to_path_buf(),
+        });
         self.stop_worker();
-        let mut child = Command::new(executable)
-            .arg("--model")
-            .arg(model)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|error| prompt_worker_spawn_error(executable, error))?;
+        let mut child = spawn_worker(executable, model)?;
         let stdin = child.stdin.take().context("worker stdin was unavailable")?;
         let stdout = child
             .stdout
@@ -171,12 +185,25 @@ impl PromptEnhancer {
             terminate(&mut child);
             bail!("prompt enhancer was disabled during setup");
         }
+        *self
+            .last_activity
+            .lock()
+            .expect("plugin worker activity mutex poisoned") = Some(std::time::Instant::now());
+        let generation = self.worker_generation.fetch_add(1, Ordering::SeqCst) + 1;
         *self.worker.lock().expect("plugin worker mutex poisoned") = Some(WorkerHandle {
             child,
             stdin,
             responses,
             next_request_id: 1,
         });
+        self.spawn_idle_monitor(generation);
+        Ok(())
+    }
+
+    pub fn prime_worker(&self, executable: &Path, model: &Path) -> Result<()> {
+        // Verify the model once, then release the worker so it can stay off RAM until needed.
+        self.start_worker(executable, model)?;
+        self.stop_worker();
         Ok(())
     }
 
@@ -199,7 +226,63 @@ impl PromptEnhancer {
             .take()
         {
             worker.stop();
+            self.worker_generation.fetch_add(1, Ordering::SeqCst);
         }
+    }
+
+    fn ensure_worker(&self) -> Result<()> {
+        if self
+            .worker
+            .lock()
+            .expect("plugin worker mutex poisoned")
+            .is_some()
+        {
+            return Ok(());
+        }
+
+        let paths = self
+            .worker_paths
+            .lock()
+            .expect("plugin worker paths mutex poisoned")
+            .clone()
+            .context("prompt enhancer worker is not configured")?;
+        self.start_worker(&paths.executable, &paths.model)
+    }
+
+    fn spawn_idle_monitor(&self, generation: u64) {
+        let worker = Arc::clone(&self.worker);
+        let enabled = Arc::clone(&self.enabled);
+        let last_activity = Arc::clone(&self.last_activity);
+        let worker_generation = Arc::clone(&self.worker_generation);
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(WORKER_IDLE_TIMEOUT);
+                if !enabled.load(Ordering::SeqCst) {
+                    return;
+                }
+                if worker_generation.load(Ordering::SeqCst) != generation {
+                    return;
+                }
+
+                let mut guard = worker.lock().expect("plugin worker mutex poisoned");
+                if guard.is_none() {
+                    return;
+                }
+                let idle_for = last_activity
+                    .lock()
+                    .expect("plugin worker activity mutex poisoned")
+                    .map(|instant| instant.elapsed())
+                    .unwrap_or_default();
+                if idle_for < WORKER_IDLE_TIMEOUT {
+                    continue;
+                }
+
+                if let Some(mut worker) = guard.take() {
+                    worker.stop();
+                }
+                return;
+            }
+        });
     }
 
     fn infer(
@@ -207,6 +290,7 @@ impl PromptEnhancer {
         context: &PluginExecutionContext,
         settings: &BTreeMap<String, String>,
     ) -> Result<PluginExecutionOutput> {
+        self.ensure_worker()?;
         let mut guard = self.worker.lock().expect("plugin worker mutex poisoned");
         let worker = guard
             .as_mut()
@@ -227,7 +311,14 @@ impl PromptEnhancer {
                 request_id: response_id,
                 text,
                 backend,
-            })) if response_id == request_id => Ok(PluginExecutionOutput { text, backend }),
+            })) if response_id == request_id => {
+                *self
+                    .last_activity
+                    .lock()
+                    .expect("plugin worker activity mutex poisoned") =
+                    Some(std::time::Instant::now());
+                Ok(PluginExecutionOutput { text, backend })
+            }
             Ok(Ok(WorkerResponse::Error { message, .. })) => bail!(message),
             Ok(Ok(response)) => bail!("unexpected prompt enhancer worker response: {response:?}"),
             Ok(Err(error)) => bail!("prompt enhancer worker protocol error: {error}"),
@@ -444,6 +535,17 @@ fn terminate(child: &mut Child) {
     let _ = child.wait();
 }
 
+fn spawn_worker(executable: &Path, model: &Path) -> Result<Child> {
+    Command::new(executable)
+        .arg("--model")
+        .arg(model)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|error| prompt_worker_spawn_error(executable, error))
+}
+
 fn prompt_worker_spawn_error(executable: &Path, error: std::io::Error) -> anyhow::Error {
     #[cfg(windows)]
     if error.raw_os_error() == Some(4551) {
@@ -560,6 +662,45 @@ mod tests {
                 .model_path()
                 .ends_with(Path::new("models/llama/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"))
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn can_restart_worker_on_demand_after_shutdown() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        let script = std::env::temp_dir().join(format!(
+            "banshee-fake-prompt-worker-restart-{}",
+            std::process::id()
+        ));
+        fs::write(
+            &script,
+            "#!/bin/sh\necho '{\"type\":\"ready\",\"protocolVersion\":2}'\nIFS= read -r request\necho '{\"type\":\"transformed\",\"requestId\":1,\"text\":\"enhanced\",\"backend\":\"fake\"}'\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&script, permissions).unwrap();
+
+        let enhancer = PromptEnhancer::default();
+        enhancer.enable();
+        enhancer
+            .start_worker(&script, Path::new("unused.gguf"))
+            .unwrap();
+        enhancer.stop_worker();
+
+        let output = enhancer
+            .transform(
+                &context(),
+                &BTreeMap::from([(TARGET_MODEL_SETTING.into(), DEFAULT_TARGET_MODEL.into())]),
+            )
+            .unwrap();
+        assert_eq!(output.text, "enhanced");
+        assert_eq!(output.backend, "fake");
+
+        enhancer.unload();
+        fs::remove_file(script).unwrap();
     }
 
     #[cfg(windows)]

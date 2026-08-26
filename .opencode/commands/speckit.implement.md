@@ -1,5 +1,5 @@
 ---
-description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
+description: Execute the implementation plan by processing and executing all tasks defined in tasks.md. Use `.opencode/skills/plugin-development/SKILL.md` for plugin-related work.
 ---
 
 ## User Input

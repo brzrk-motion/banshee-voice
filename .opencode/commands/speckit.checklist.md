@@ -1,5 +1,5 @@
 ---
-description: Generate a custom checklist for the current feature based on user requirements.
+description: Generate a custom checklist for the current feature based on user requirements. Use `.opencode/skills/plugin-development/SKILL.md` for plugin-related work.
 ---
 
 ## Checklist Purpose: "Unit Tests for English"

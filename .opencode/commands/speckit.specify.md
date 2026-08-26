@@ -1,5 +1,5 @@
 ---
-description: Create or update the feature specification from a natural language feature description.
+description: Create or update the feature specification from a natural language feature description. Use `.opencode/skills/plugin-development/SKILL.md` for plugin-related work.
 handoffs:
   - label: Build Technical Plan
     agent: speckit.plan

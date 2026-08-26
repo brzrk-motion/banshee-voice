@@ -196,7 +196,7 @@ impl ManagedAppState {
                 status_engine.set_runtime_status(model_status_to_plugin(&status));
                 let _ = app.emit("plugins_changed", ());
             },
-            move |path| engine.start_worker(&prompt_worker_path()?, path),
+            move |path| engine.prime_worker(&prompt_worker_path()?, path),
         );
     }
 

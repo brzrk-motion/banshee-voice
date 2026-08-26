@@ -18,6 +18,8 @@ use std::time::{Duration, Instant};
 
 const INFERENCE_DEADLINE: Duration = Duration::from_secs(12);
 const MAX_OUTPUT_TOKENS: i32 = 192;
+const CONTEXT_TOKENS: u32 = 2048;
+const MAX_THREADS: usize = 4;
 const BACKEND: &str = "llama.cpp:qwen2.5-1.5b-q4_k_m:cpu";
 
 struct PromptModel {
@@ -40,10 +42,13 @@ impl PromptModel {
     ) -> Result<String> {
         let started = Instant::now();
         let prompt = enhancement_prompt(context, settings);
+        let threads = worker_threads() as i32;
         let params = LlamaContextParams::default()
-            .with_n_ctx(Some(NonZeroU32::new(4096).expect("nonzero context")))
-            .with_n_threads(8)
-            .with_n_threads_batch(8);
+            .with_n_ctx(Some(
+                NonZeroU32::new(CONTEXT_TOKENS).expect("nonzero context"),
+            ))
+            .with_n_threads(threads)
+            .with_n_threads_batch(threads);
         let mut llama = self.model.new_context(&self.backend, params)?;
         let tokens = self.model.str_to_token(&prompt, AddBos::Always)?;
         if tokens.len() + 16 >= llama.n_ctx() as usize {
@@ -162,4 +167,11 @@ fn write_response(writer: &mut impl Write, response: &WorkerResponse) -> Result<
     writer.write_all(b"\n")?;
     writer.flush()?;
     Ok(())
+}
+
+fn worker_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(|threads| threads.get())
+        .unwrap_or(MAX_THREADS)
+        .min(MAX_THREADS)
 }

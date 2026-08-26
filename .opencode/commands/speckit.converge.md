@@ -1,5 +1,5 @@
 ---
-description: Assess the current codebase against the feature's spec, plan, and tasks, then append any remaining unbuilt work as new tasks to tasks.md so implement can complete it.
+description: Assess the current codebase against the feature's spec, plan, and tasks, then append any remaining unbuilt work as new tasks to tasks.md so implement can complete it. Use `.opencode/skills/plugin-development/SKILL.md` for plugin-related work.
 ---
 
 ## User Input

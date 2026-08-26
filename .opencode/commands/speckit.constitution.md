@@ -1,5 +1,5 @@
 ---
-description: Create or update the project constitution from interactive or provided principle inputs.
+description: Create or update the project constitution from interactive or provided principle inputs. Use `.opencode/skills/plugin-development/SKILL.md` for plugin-related work.
 handoffs:
   - label: Build Specification
     agent: speckit.specify

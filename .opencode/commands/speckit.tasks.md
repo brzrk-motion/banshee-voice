@@ -1,5 +1,5 @@
 ---
-description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
+description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts. Use `.opencode/skills/plugin-development/SKILL.md` for plugin-related work.
 handoffs:
   - label: Analyze For Consistency
     agent: speckit.analyze
