@@ -12,7 +12,7 @@ import type { AudioInputDevice, DictionaryEntry, ModelStatus, ModelsStatus, Page
 const missingCleanupStatus: ModelStatus = {
   capability: "cleanup",
   state: "missing",
-  modelName: "Qwen2.5-0.5B-Instruct-Q4_K_M",
+  modelName: "Qwen2.5-1.5B-Instruct-Q4_K_M",
   downloadedBytes: 0,
 };
 

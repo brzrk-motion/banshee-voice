@@ -23,15 +23,15 @@ pub const DEFAULT_TARGET_MODEL: &str = "gpt-5.3-codex";
 pub const WORKER_PROTOCOL_VERSION: u32 = 2;
 pub const MODEL_DESCRIPTOR: ModelDescriptor = ModelDescriptor {
     capability: ModelCapability::Cleanup,
-    name: "Qwen2.5-0.5B-Instruct-Q4_K_M",
+    name: "Qwen2.5-1.5B-Instruct-Q4_K_M",
     directory: "llama",
-    file: "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
-    url: "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
-    sha256: "6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653",
+    file: "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+    url: "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+    sha256: "1adf0b11065d8ad2e8123ea110d1ec956dab4ab038eab665614adba04b6c3370",
 };
 
 const WORKER_START_TIMEOUT: Duration = Duration::from_secs(45);
-const WORKER_REQUEST_TIMEOUT: Duration = Duration::from_secs(7);
+const WORKER_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -272,17 +272,20 @@ impl TextTransformPlugin for PromptEnhancer {
         context: &PluginExecutionContext,
         settings: &BTreeMap<String, String>,
     ) -> Result<PluginExecutionOutput> {
-        let result = self.infer(context, settings);
-        if let Err(error) = &result {
-            self.stop_worker();
-            self.set_runtime_status(PluginRuntimeStatus {
-                state: PluginRuntimeState::Error,
-                downloaded_bytes: 0,
-                total_bytes: None,
-                message: Some(error.to_string()),
-            });
+        match self.infer(context, settings) {
+            Ok(output) if valid_enhancement(&context.current_text, &output.text) => Ok(output),
+            Ok(_) => bail!("prompt enhancer returned unchanged, unstructured, or invalid text"),
+            Err(error) => {
+                self.stop_worker();
+                self.set_runtime_status(PluginRuntimeStatus {
+                    state: PluginRuntimeState::Error,
+                    downloaded_bytes: 0,
+                    total_bytes: None,
+                    message: Some(error.to_string()),
+                });
+                Err(error)
+            }
         }
-        result
     }
 }
 
@@ -319,11 +322,121 @@ pub fn enhancement_prompt(
     settings: &BTreeMap<String, String>,
 ) -> String {
     format!(
-        "<|im_start|>system\nRewrite the spoken request as a precise prompt for the specified coding model. Preserve the user's intent and all concrete requirements. Tailor the structure and level of detail for the target model. Add useful structure, acceptance criteria, and constraints only when they follow from the request. Do not invent technologies, files, facts, or requirements. Return only the enhanced prompt; never answer it.<|im_end|>\n<|im_start|>user\nTarget coding model: {}\nActive application: {}\nSpoken request:\n{}<|im_end|>\n<|im_start|>assistant\n",
+        "<|im_start|>system\nRewrite spoken software requests into actionable prompts for coding agents. Remove conversational filler and repetition while preserving every stated requirement, especially negations and constraints. Correct speech-to-text mistakes only when the intended wording is certain. Do not add libraries, languages, files, numeric limits, algorithms, examples, tests, documentation, configurability, or implementation details unless the user stated them. When details are missing, keep the requirement high-level. Every bullet must be directly entailed by the spoken request; omit anything that is merely a useful suggestion. Return only the rewritten prompt with exactly these headings: ## Task, ## Requirements, and ## Acceptance criteria. Under ## Task, write one direct outcome statement. Write no more than three concise requirements and no more than two concise acceptance criteria. Never copy these instructions or describe the purpose of a section.<|im_end|>\n<|im_start|>user\nTarget coding model: {}\nSpoken request:\n{}<|im_end|>\n<|im_start|>assistant\n",
         target_model_label(settings),
-        context.active_application,
         context.current_text
     )
+}
+
+pub fn sanitize_enhancement(output: &str) -> String {
+    #[derive(Clone, Copy)]
+    enum Section {
+        Other,
+        Requirements,
+        AcceptanceCriteria,
+    }
+
+    let mut section = Section::Other;
+    let mut list_items = 0;
+    let mut skipping_item = false;
+    let mut lines = Vec::new();
+    for line in output.trim().trim_matches('"').lines() {
+        let trimmed = line.trim_end();
+        let heading = trimmed.trim().to_lowercase();
+        if heading.starts_with("## requirements") {
+            section = Section::Requirements;
+            list_items = 0;
+            skipping_item = false;
+            lines.push("## Requirements".to_string());
+            continue;
+        }
+        if heading.starts_with("## acceptance criteria") {
+            section = Section::AcceptanceCriteria;
+            list_items = 0;
+            skipping_item = false;
+            lines.push("## Acceptance criteria".to_string());
+            continue;
+        }
+        if heading.starts_with("## task") {
+            section = Section::Other;
+            skipping_item = false;
+            lines.push("## Task".to_string());
+            continue;
+        }
+
+        if is_list_item(trimmed) {
+            list_items += 1;
+            let limit = match section {
+                Section::Requirements => 3,
+                Section::AcceptanceCriteria => 2,
+                Section::Other => usize::MAX,
+            };
+            skipping_item = list_items > limit;
+        }
+        if !skipping_item {
+            lines.push(trimmed.to_string());
+        }
+    }
+
+    lines.join("\n").trim().to_string()
+}
+
+fn is_list_item(line: &str) -> bool {
+    let line = line.trim_start();
+    line.starts_with("- ")
+        || line.starts_with("* ")
+        || line
+            .split_once(". ")
+            .is_some_and(|(prefix, _)| prefix.chars().all(|character| character.is_ascii_digit()))
+}
+
+fn valid_enhancement(input: &str, output: &str) -> bool {
+    let normalized_input = normalize_for_comparison(input);
+    let normalized_output = normalize_for_comparison(output);
+    if normalized_input == normalized_output {
+        return false;
+    }
+
+    let required_sections = ["## task", "## requirements", "## acceptance criteria"];
+    if !required_sections
+        .iter()
+        .all(|section| normalized_output.contains(section))
+    {
+        return false;
+    }
+    let leaked_instructions = [
+        "concrete implementation requirements from the request",
+        "observable conditions that establish the task is complete",
+        "include a ## constraints section",
+        "never answer or implement the request",
+    ];
+    if leaked_instructions
+        .iter()
+        .any(|phrase| normalized_output.contains(phrase))
+    {
+        return false;
+    }
+
+    let input_len = normalized_input.chars().count();
+    let output_len = normalized_output.chars().count();
+    let length_delta = input_len.abs_diff(output_len);
+    let material_length_delta = length_delta >= 12 && length_delta * 100 >= input_len.max(1) * 15;
+    let structured = output
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count()
+        >= 3
+        && output.lines().any(is_list_item);
+
+    material_length_delta || structured
+}
+
+fn normalize_for_comparison(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 fn terminate(child: &mut Child) {
@@ -335,7 +448,7 @@ fn prompt_worker_spawn_error(executable: &Path, error: std::io::Error) -> anyhow
     #[cfg(windows)]
     if error.raw_os_error() == Some(4551) {
         return anyhow::anyhow!(
-            "Windows Smart App Control blocked the prompt enhancer worker. Enable Developer Mode in Windows Settings, reboot Windows, then restart `npm run tauri:dev`"
+            "Windows Smart App Control blocked the prompt enhancer worker. Turn off Smart App Control for this development environment and reboot Windows, or run a build signed by a publicly trusted certificate"
         );
     }
 
@@ -403,8 +516,40 @@ mod tests {
         );
         assert!(prompt.contains("add retry handling"));
         assert!(prompt.contains("Target coding model: Claude Opus 5"));
-        assert!(prompt.contains("Active application: Editor"));
-        assert!(prompt.contains("never answer it"));
+        assert!(prompt.contains("## Acceptance criteria"));
+        assert!(prompt.contains("exactly these headings"));
+    }
+
+    #[test]
+    fn requires_a_material_structured_transformation() {
+        assert!(!valid_enhancement(
+            "Add retry handling to the client.",
+            " Add  retry handling to the client. "
+        ));
+        assert!(!valid_enhancement(
+            "Add robust retry handling to the API client.",
+            "Add reliable retry handling to the API client."
+        ));
+        assert!(valid_enhancement(
+            "Add retry handling to the client.",
+            "## Task\nAdd resilient API retries.\n\n## Requirements\n- Retry transient failures.\n\n## Acceptance criteria\n- Transient requests are retried."
+        ));
+        assert!(!valid_enhancement(
+            "Add retry handling to the client.",
+            "## Task\nAdd retries.\n\n## Requirements\n- Concrete implementation requirements from the request.\n\n## Acceptance criteria\n- Requests are retried."
+        ));
+    }
+
+    #[test]
+    fn sanitizes_section_names_and_caps_generated_bullets() {
+        let output = sanitize_enhancement(
+            "## Task\nImprove retries.\n\n## Requirements\n- One\n- Two\n- Three\n- Invented four\n\n## Acceptance Criteria\n- First\n- Second\n- Invented third",
+        );
+        assert!(output.contains("## Acceptance criteria"));
+        assert!(output.contains("- Three"));
+        assert!(output.contains("- Second"));
+        assert!(!output.contains("Invented four"));
+        assert!(!output.contains("Invented third"));
     }
 
     #[test]
@@ -413,7 +558,7 @@ mod tests {
         assert!(
             installer
                 .model_path()
-                .ends_with(Path::new("models/llama/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"))
+                .ends_with(Path::new("models/llama/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"))
         );
     }
 
@@ -425,8 +570,8 @@ mod tests {
             std::io::Error::from_raw_os_error(4551),
         );
         assert!(error.to_string().contains("Windows Smart App Control"));
-        assert!(error.to_string().contains("Enable Developer Mode"));
-        assert!(error.to_string().contains("reboot Windows"));
+        assert!(error.to_string().contains("Turn off Smart App Control"));
+        assert!(error.to_string().contains("publicly trusted certificate"));
     }
 
     #[cfg(unix)]

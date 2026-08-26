@@ -29,9 +29,9 @@ Write-Host "Whisper model: $outputPath"
 
 if ($WithCleanupModel) {
     $cleanupDirectory = Join-Path $repositoryRoot 'models\llama'
-    $cleanupFile = 'Qwen2.5-0.5B-Instruct-Q4_K_M.gguf'
+    $cleanupFile = 'Qwen2.5-1.5B-Instruct-Q4_K_M.gguf'
     $cleanupPath = Join-Path $cleanupDirectory $cleanupFile
-    $cleanupUrl = "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/$cleanupFile"
+    $cleanupUrl = "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/$cleanupFile"
     New-Item -ItemType Directory -Force -Path $cleanupDirectory | Out-Null
     if (-not (Test-Path -LiteralPath $cleanupPath)) {
         Write-Host "Downloading cleanup model to $cleanupPath"

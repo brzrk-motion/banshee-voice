@@ -2,6 +2,7 @@ use anyhow::{Context, Result, bail};
 use banshee_contracts::domain::PluginExecutionContext;
 use banshee_prompt_enhancer::{
     WORKER_PROTOCOL_VERSION, WorkerRequest, WorkerResponse, enhancement_prompt,
+    sanitize_enhancement,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -15,8 +16,9 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const INFERENCE_DEADLINE: Duration = Duration::from_secs(5);
-const BACKEND: &str = "llama.cpp:qwen2.5-0.5b-q4_k_m:cpu";
+const INFERENCE_DEADLINE: Duration = Duration::from_secs(12);
+const MAX_OUTPUT_TOKENS: i32 = 192;
+const BACKEND: &str = "llama.cpp:qwen2.5-1.5b-q4_k_m:cpu";
 
 struct PromptModel {
     model: LlamaModel,
@@ -57,7 +59,7 @@ impl PromptModel {
         let mut output = String::new();
         let mut decoder = encoding_rs::UTF_8.new_decoder();
         let first = batch.n_tokens();
-        for position in first..first + 768 {
+        for position in first..first + MAX_OUTPUT_TOKENS {
             if started.elapsed() >= INFERENCE_DEADLINE {
                 bail!("prompt enhancement timed out");
             }
@@ -75,7 +77,7 @@ impl PromptModel {
             batch.add(token, position, &[0], true)?;
             llama.decode(&mut batch)?;
         }
-        Ok(output.trim().trim_matches('"').trim().to_string())
+        Ok(sanitize_enhancement(&output))
     }
 }
 

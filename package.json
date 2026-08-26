@@ -11,7 +11,8 @@
     "dev": "turbo run tauri:dev --filter=@banshee/desktop",
     "tauri:dev": "node scripts/tauri.mjs dev",
     "build": "turbo run build",
-    "test": "turbo run test",
+    "test": "npm run test:scripts && turbo run test",
+    "test:scripts": "node --test scripts/*.test.mjs",
     "check": "turbo run check",
     "desktop:build": "turbo run tauri:build --filter=@banshee/desktop"
   },
