@@ -207,10 +207,12 @@ impl ModelInstaller {
         self.publish(status, on_status);
         output.sync_all()?;
         let digest = format!("{:x}", hasher.finalize());
-        if digest != self.descriptor.sha256 {
-            let _ = fs::remove_file(&partial_path);
-            bail!("downloaded model failed integrity validation");
-        }
+        validate_download(
+            &partial_path,
+            self.descriptor.name,
+            &digest,
+            self.descriptor.sha256,
+        )?;
         if self.model_path.exists() {
             fs::remove_file(&self.model_path)?;
         }
@@ -225,6 +227,17 @@ impl ModelInstaller {
         *self.status.lock().expect("model status mutex poisoned") = status.clone();
         on_status(status);
     }
+}
+
+fn validate_download(path: &Path, model_name: &str, actual: &str, expected: &str) -> Result<()> {
+    if actual == expected {
+        return Ok(());
+    }
+
+    let _ = fs::remove_file(path);
+    bail!(
+        "downloaded model {model_name} failed integrity validation: expected SHA-256 {expected}, got {actual}"
+    );
 }
 
 fn valid_model(path: &Path, expected: &str) -> Result<bool> {
@@ -248,10 +261,45 @@ fn valid_model(path: &Path, expected: &str) -> Result<bool> {
 mod tests {
     use super::*;
 
+    fn temp_file(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("banshee-{name}-{}", std::process::id()))
+    }
+
     #[test]
     fn missing_model_is_not_valid() {
-        let path = std::env::temp_dir().join(format!("banshee-missing-{}", std::process::id()));
+        let path = temp_file("missing");
         assert!(!valid_model(&path, DEFAULT_MODEL_SHA256).expect("validation should succeed"));
+    }
+
+    #[test]
+    fn model_is_valid_only_when_file_hash_matches() {
+        let path = temp_file("valid-model");
+        fs::write(&path, b"test model").expect("test model should be written");
+
+        assert!(
+            valid_model(
+                &path,
+                "e6a8036e9cb9f8c9f52ffd985c4d6f0498d94e6919f4c67b6423da0176e549fa"
+            )
+            .expect("validation should succeed")
+        );
+        assert!(!valid_model(&path, DEFAULT_MODEL_SHA256).expect("validation should succeed"));
+
+        fs::remove_file(path).expect("test model should be removed");
+    }
+
+    #[test]
+    fn rejected_download_is_removed_and_reports_digests() {
+        let path = temp_file("invalid-download.part");
+        fs::write(&path, b"invalid model").expect("partial model should be written");
+
+        let error = validate_download(&path, "cleanup-model", "actual", "expected")
+            .expect_err("mismatched download should be rejected")
+            .to_string();
+
+        assert!(!path.exists());
+        assert!(error.contains("cleanup-model"));
+        assert!(error.contains("expected SHA-256 expected, got actual"));
     }
 
     #[test]

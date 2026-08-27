@@ -21,7 +21,7 @@ npm install
 npm run dev
 ```
 
-The root Turbo workspace also provides `npm run build`, `npm run test`, `npm run check`, and `npm run desktop:build`. On first launch, Banshee downloads the approximately 141 MiB speech model into the platform application-data directory and verifies its published SHA-256 before loading it. Enabling Prompt Enhancer on the Plugins page downloads an additional approximately 940 MiB Qwen2.5 1.5B cleanup model and starts the bundled `banshee-prompt-worker` sidecar. Its Settings dialog selects the coding model that will receive the enhanced prompt. After installation, transcription and plugin processing are offline.
+The root Turbo workspace also provides `npm run build`, `npm run test`, `npm run check`, and `npm run desktop:build`. On first launch, Banshee downloads the approximately 141 MiB speech model into the platform application-data directory and verifies its published SHA-256 before loading it. Enabling Prompt Enhancer on the Plugins page downloads an additional approximately 2.64 GiB NVIDIA Nemotron 3 Nano 4B cleanup model and starts the bundled `banshee-prompt-worker` sidecar. Its Settings dialog selects the coding model that will receive the enhanced prompt. After installation, transcription and plugin processing are offline.
 
 ## Repository structure
 

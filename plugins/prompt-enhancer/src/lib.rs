@@ -28,7 +28,7 @@ pub const MODEL_DESCRIPTOR: ModelDescriptor = ModelDescriptor {
     directory: "nemotron",
     file: "NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
     url: "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF/resolve/main/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
-    sha256: "fc9a09a10af8d2b715bcd84a02f686733b48eadf6ffcd409b3119b5d59e0e71a",
+    sha256: "be5d9a656a51922f24f1f09a759cebb694e1f5d9728bf0ef9f8c972c5a0b5ef2",
 };
 
 const WORKER_START_TIMEOUT: Duration = Duration::from_secs(45);
@@ -660,6 +660,10 @@ mod tests {
         assert!(installer.model_path().ends_with(Path::new(
             "models/nemotron/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf"
         )));
+        assert_eq!(
+            MODEL_DESCRIPTOR.sha256,
+            "be5d9a656a51922f24f1f09a759cebb694e1f5d9728bf0ef9f8c972c5a0b5ef2"
+        );
     }
 
     #[cfg(unix)]
