@@ -24,11 +24,11 @@ pub const DEFAULT_TARGET_MODEL: &str = "gpt-5.3-codex";
 pub const WORKER_PROTOCOL_VERSION: u32 = 2;
 pub const MODEL_DESCRIPTOR: ModelDescriptor = ModelDescriptor {
     capability: ModelCapability::Cleanup,
-    name: "Qwen2.5-1.5B-Instruct-Q4_K_M",
-    directory: "llama",
-    file: "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
-    url: "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
-    sha256: "1adf0b11065d8ad2e8123ea110d1ec956dab4ab038eab665614adba04b6c3370",
+    name: "NVIDIA-Nemotron3-Nano-4B-Q4_K_M",
+    directory: "nemotron",
+    file: "NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
+    url: "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF/resolve/main/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
+    sha256: "fc9a09a10af8d2b715bcd84a02f686733b48eadf6ffcd409b3119b5d59e0e71a",
 };
 
 const WORKER_START_TIMEOUT: Duration = Duration::from_secs(45);
@@ -657,11 +657,9 @@ mod tests {
     #[test]
     fn model_descriptor_uses_plugin_directory() {
         let installer = ModelInstaller::from_descriptor(Path::new("app-data"), MODEL_DESCRIPTOR);
-        assert!(
-            installer
-                .model_path()
-                .ends_with(Path::new("models/llama/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"))
-        );
+        assert!(installer.model_path().ends_with(Path::new(
+            "models/nemotron/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf"
+        )));
     }
 
     #[cfg(unix)]

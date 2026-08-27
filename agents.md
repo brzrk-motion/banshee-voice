@@ -64,7 +64,7 @@ This repo is Banshee Voice, a local Tauri desktop app. The backend is Rust, the 
 - `crates/storage::resolve_data_dir()` chooses the app data directory; `BANSHEE_APP_DATA_DIR` overrides the OS default.
 - `ModelCapability` currently has `Speech` and `Cleanup`.
 - The speech model is `base.en` from `whisper.cpp`.
-- The prompt enhancer model is `Qwen2.5-1.5B-Instruct-Q4_K_M.gguf` from Hugging Face.
+- The prompt enhancer model is `NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf` from Hugging Face.
 - `scripts/fetch-models.sh` and `scripts/fetch-models.ps1` download verification copies into the gitignored repo-local `models/` directory.
 - The desktop app exposes model status through Tauri commands and retries installation with `model_download_retry`.
 

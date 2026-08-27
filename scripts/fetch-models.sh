@@ -68,7 +68,7 @@ whisper_url_for() {
 }
 
 default_cleanup_url() {
-  printf 'https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf'
+  printf 'https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF/resolve/main/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf'
 }
 
 while [[ $# -gt 0 ]]; do
