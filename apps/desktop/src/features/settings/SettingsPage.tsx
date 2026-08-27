@@ -8,11 +8,12 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { AudioInputDevice, DictionaryEntry, Settings } from "@/lib/types";
+import type { AccelerationStatus, AudioInputDevice, DictionaryEntry, Settings } from "@/lib/types";
 import { ShortcutCapture } from "./ShortcutCapture";
 
 type Props = {
   settings: Settings | null;
+  accelerationStatus: AccelerationStatus;
   devices: AudioInputDevice[];
   vocabulary: DictionaryEntry[];
   saving: boolean;
@@ -35,13 +36,16 @@ function SettingRow({ title, description, children }: { title: string; descripti
   return <div className="grid gap-3 border-t py-4 first:border-t-0 first:pt-0 sm:grid-cols-[minmax(0,1fr)_260px] sm:items-center"><div><Label>{title}</Label><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div><div>{children}</div></div>;
 }
 
-export function SettingsPage({ settings, devices, vocabulary, saving, onSave }: Props) {
+export function SettingsPage({ settings, accelerationStatus, devices, vocabulary, saving, onSave }: Props) {
   const [draft, setDraft] = useState<Settings | null>(settings);
   const [vocabularyDraft, setVocabularyDraft] = useState(formatVocabulary(vocabulary));
   useEffect(() => setDraft(settings), [settings]);
   useEffect(() => setVocabularyDraft(formatVocabulary(vocabulary)), [vocabulary]);
   const dirty = useMemo(() => Boolean(draft && settings && (JSON.stringify(draft) !== JSON.stringify(settings) || vocabularyDraft !== formatVocabulary(vocabulary))), [draft, settings, vocabulary, vocabularyDraft]);
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
+  const accelerationDescription = accelerationStatus.gpuAvailable
+    ? `${accelerationStatus.backend ?? "GPU"} acceleration is available${accelerationStatus.deviceName ? ` on ${accelerationStatus.deviceName}` : ""}.`
+    : accelerationStatus.unavailableReason ?? "GPU acceleration is unavailable in this build.";
 
   if (!draft) return <div className="mx-auto max-w-4xl space-y-4 p-6 lg:p-8"><div className="h-48 animate-pulse rounded-xl bg-muted" /><div className="h-48 animate-pulse rounded-xl bg-muted" /></div>;
 
@@ -90,7 +94,7 @@ export function SettingsPage({ settings, devices, vocabulary, saving, onSave }: 
       <Card>
         <CardHeader><CardTitle>Processing & privacy</CardTitle><CardDescription>Transcription stays local. History contains text only.</CardDescription></CardHeader>
         <CardContent>
-          <SettingRow title="Acceleration" description="This build currently runs local inference on CPU."><NativeSelect aria-label="Acceleration" value={draft.accelerationPreference} onChange={(event) => update("accelerationPreference", event.target.value as Settings["accelerationPreference"])}><option value="auto">Automatic (CPU)</option><option value="cpu">CPU</option><option value="gpu" disabled>GPU unavailable in this build</option></NativeSelect></SettingRow>
+          <SettingRow title="Acceleration" description={accelerationDescription}><NativeSelect aria-label="Acceleration" value={draft.accelerationPreference} onChange={(event) => update("accelerationPreference", event.target.value as Settings["accelerationPreference"])}><option value="auto">Automatic (GPU preferred)</option><option value="cpu">CPU</option><option value="gpu" disabled={!accelerationStatus.gpuAvailable}>GPU{accelerationStatus.backend ? ` (${accelerationStatus.backend})` : ""}</option></NativeSelect></SettingRow>
           <SettingRow title="Custom vocabulary" description="One canonical term per line, or use “heard phrase => Correct Term” for explicit aliases."><Textarea aria-label="Custom vocabulary" rows={7} value={vocabularyDraft} placeholder={"Banshee\nHUD\nbanci hud => Banshee HUD"} onChange={(event) => setVocabularyDraft(event.target.value)} /></SettingRow>
           <SettingRow title="Save text history" description="Store completed transcript text locally. Audio is never retained."><Switch aria-label="Save text history" checked={draft.historyEnabled} onCheckedChange={(value) => update("historyEnabled", value)} /></SettingRow>
         </CardContent>

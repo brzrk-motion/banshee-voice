@@ -7,7 +7,7 @@ import { PluginsPage } from "@/features/plugins/PluginsPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TranscribePage } from "@/features/transcribe/TranscribePage";
 import { errorMessage, run } from "@/lib/tauri";
-import type { AudioInputDevice, DictionaryEntry, ModelStatus, ModelsStatus, PageId, PluginSummary, RecordingResult, RecordingSnapshot, RecordingStateChanged, Settings } from "@/lib/types";
+import type { AccelerationStatus, AudioInputDevice, DictionaryEntry, ModelStatus, ModelsStatus, PageId, PluginSummary, RecordingResult, RecordingSnapshot, RecordingStateChanged, Settings } from "@/lib/types";
 
 const missingCleanupStatus: ModelStatus = {
   capability: "cleanup",
@@ -32,6 +32,7 @@ async function loadModelsStatus() {
 export default function App() {
   const [page, setPage] = useState<PageId>("transcribe");
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [accelerationStatus, setAccelerationStatus] = useState<AccelerationStatus>({ gpuAvailable: false });
   const [devices, setDevices] = useState<AudioInputDevice[]>([]);
   const [recordingState, setRecordingState] = useState("idle");
   const [scratchText, setScratchText] = useState("");
@@ -52,6 +53,7 @@ export default function App() {
     };
 
     void run<Settings>("settings_get").then(setSettings).catch(reportLoadError("settings"));
+    void run<AccelerationStatus>("acceleration_status_get").then(setAccelerationStatus).catch(reportLoadError("acceleration status"));
     void run<AudioInputDevice[]>("audio_list_input_devices").then(setDevices).catch(reportLoadError("audio devices"));
     void loadModelsStatus().then(setModelsStatus).catch(reportLoadError("model status"));
     void run<DictionaryEntry[]>("dictionary_entries_get").then(setVocabulary).catch(reportLoadError("custom vocabulary"));
@@ -202,7 +204,7 @@ export default function App() {
         ) : null}
         {page === "history" ? <HistoryPage onCopy={copyText} /> : null}
         {page === "plugins" ? <PluginsPage plugins={plugins} changing={changingPlugin} savingSettings={savingPluginSettings} onToggle={togglePlugin} onRetry={retryPlugin} onSaveSettings={savePluginSettings} /> : null}
-        {page === "settings" ? <SettingsPage settings={settings} devices={devices} vocabulary={vocabulary} saving={savingSettings} onSave={saveSettings} /> : null}
+        {page === "settings" ? <SettingsPage settings={settings} accelerationStatus={accelerationStatus} devices={devices} vocabulary={vocabulary} saving={savingSettings} onSave={saveSettings} /> : null}
       </AppShell>
       <Toaster theme="dark" position="bottom-right" richColors closeButton />
     </>

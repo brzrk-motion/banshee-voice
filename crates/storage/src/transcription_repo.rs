@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use banshee_contracts::domain::{
-    AccelerationPreference, HistoryItem, HistoryPage, OutputMethod, OutputResultKind,
-    PipelineRunResult, PipelineRunStatus,
+    AccelerationBackend, AccelerationPreference, HistoryItem, HistoryPage, OutputMethod,
+    OutputResultKind, PipelineRunResult, PipelineRunStatus,
 };
 use rusqlite::{Connection, params};
 use std::sync::{Arc, Mutex};
@@ -36,8 +36,8 @@ impl SqliteTranscriptionRepository {
              ) VALUES (
                 ?1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
                 ?2, ?3, 0, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-                NULL, ?12, NULL, NULL, ?13, ?14, ?15, 'cpu',
-                ?16, ?17, ?18, ?19, ?20, NULL, ?21, ?22
+                NULL, ?12, NULL, NULL, ?13, ?14, ?15, ?16,
+                ?17, ?18, ?19, ?20, ?21, NULL, ?22, ?23
              )",
             params![
                 result.session_id,
@@ -55,6 +55,7 @@ impl SqliteTranscriptionRepository {
                 result.stt_backend,
                 result.cleanup_backend,
                 encode_acceleration(result.acceleration_preference),
+                encode_acceleration_backend(result.acceleration_backend),
                 result.stt_latency_ms as i64,
                 result.cleanup_latency_ms as i64,
                 (result.stt_latency_ms + result.cleanup_latency_ms) as i64,
@@ -144,6 +145,10 @@ fn encode_acceleration(value: AccelerationPreference) -> &'static str {
     }
 }
 
+fn encode_acceleration_backend(value: AccelerationBackend) -> &'static str {
+    value.as_str()
+}
+
 fn encode_output_method(value: OutputMethod) -> &'static str {
     match value {
         OutputMethod::DirectInsert => "direct_insert",
@@ -205,6 +210,7 @@ mod tests {
             duration_ms: 500,
             profile_id: "profile-agent".to_string(),
             acceleration_preference: AccelerationPreference::Auto,
+            acceleration_backend: AccelerationBackend::Gpu,
             session_type: SessionType::Windows,
         }
     }
@@ -238,7 +244,7 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .expect("processing metadata");
-        assert_eq!(metadata, ("deterministic".into(), 10, 1, "cpu".into()));
+        assert_eq!(metadata, ("deterministic".into(), 10, 1, "gpu".into()));
         let plugin_runs: String = connection
             .query_row(
                 "SELECT plugin_runs_json FROM transcriptions WHERE id = 'session-1'",

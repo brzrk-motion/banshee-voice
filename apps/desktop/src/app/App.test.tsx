@@ -33,6 +33,7 @@ describe("App startup", () => {
   beforeEach(() => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "settings_get") return Promise.resolve(settings);
+      if (command === "acceleration_status_get") return Promise.resolve({ gpuAvailable: false });
       if (command === "audio_list_input_devices") return Promise.resolve([]);
       if (command === "recording_snapshot_get") return Promise.resolve({ state: "idle" });
       return Promise.reject(new Error(`missing ${command}`));

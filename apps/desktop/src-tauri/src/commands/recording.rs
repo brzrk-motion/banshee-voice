@@ -333,6 +333,7 @@ pub fn stop_recording(
                 final_text: result.final_text.clone(),
                 stt_backend: result.stt_backend.clone(),
                 cleanup_backend: result.cleanup_backend.clone(),
+                acceleration_actual: result.acceleration_backend,
                 stt_latency_ms: result.stt_latency_ms,
                 cleanup_latency_ms: result.cleanup_latency_ms,
                 cleanup_fallback_reason: result.cleanup_fallback_reason.clone(),

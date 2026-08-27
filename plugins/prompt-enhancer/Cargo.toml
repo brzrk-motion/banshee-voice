@@ -16,6 +16,7 @@ required-features = ["worker"]
 [features]
 default = []
 worker = ["dep:encoding_rs", "dep:llama-cpp-2"]
+gpu-vulkan = ["llama-cpp-2/vulkan"]
 
 [dependencies]
 anyhow.workspace = true

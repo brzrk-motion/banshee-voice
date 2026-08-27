@@ -34,6 +34,31 @@ pub enum AccelerationPreference {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub enum AccelerationBackend {
+    Cpu,
+    Gpu,
+}
+
+impl AccelerationBackend {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Gpu => "gpu",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AccelerationStatus {
+    pub gpu_available: bool,
+    pub backend: Option<String>,
+    pub device_name: Option<String>,
+    pub unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum AudioRetentionPolicy {
     Never,
     Hours24,
@@ -388,6 +413,7 @@ pub struct TranscriptionRequest {
 pub struct TranscriptionOutput {
     pub raw_text: String,
     pub backend: String,
+    pub acceleration_backend: AccelerationBackend,
     pub latency_ms: u64,
 }
 
@@ -556,6 +582,7 @@ pub struct PipelineRunResult {
     pub duration_ms: u64,
     pub profile_id: String,
     pub acceleration_preference: AccelerationPreference,
+    pub acceleration_backend: AccelerationBackend,
     pub session_type: SessionType,
 }
 

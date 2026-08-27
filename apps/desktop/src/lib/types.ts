@@ -15,6 +15,13 @@ export type Settings = {
   pasteDelayMs: number;
 };
 
+export type AccelerationStatus = {
+  gpuAvailable: boolean;
+  backend?: string | null;
+  deviceName?: string | null;
+  unavailableReason?: string | null;
+};
+
 export type PluginSummary = {
   manifest: {
     id: string;
@@ -56,6 +63,7 @@ export type RecordingResult = {
   origin: "scratch" | "push_to_talk";
   sttBackend: string;
   cleanupBackend: string;
+  accelerationActual: "cpu" | "gpu";
   sttLatencyMs: number;
   cleanupLatencyMs: number;
   cleanupFallbackReason?: string | null;

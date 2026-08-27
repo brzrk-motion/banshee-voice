@@ -10,9 +10,22 @@ Target-aware paste uses Windows UI Automation, macOS Accessibility, and AT-SPI w
 
 - Rust and Node.js
 - Python and libclang/LLVM (required for native dependencies; `npm run dev` bootstraps an isolated CMake when none is installed and also bootstraps libclang on Windows)
-- Windows: Visual Studio C++ build tools
+- Windows: Visual Studio C++ build tools and the LunarG Vulkan SDK with `VULKAN_SDK` set
 - macOS: Xcode command-line tools
-- Linux: a C++ toolchain plus ALSA development headers
+- Linux: a C++ toolchain, ALSA development headers, `glslc`, Vulkan headers/loader, and the `SPIRV-Headers` CMake package
+
+Linux package examples for the Vulkan dependencies:
+
+```bash
+# Arch Linux
+sudo pacman -S shaderc vulkan-headers vulkan-icd-loader spirv-headers
+
+# Ubuntu
+sudo apt install glslc libvulkan-dev spirv-headers
+
+# Fedora
+sudo dnf install glslc vulkan-headers vulkan-loader-devel spirv-headers
+```
 
 Install all workspace dependencies from the repository root, then launch the desktop app:
 
@@ -22,6 +35,8 @@ npm run dev
 ```
 
 The root Turbo workspace also provides `npm run build`, `npm run test`, `npm run check`, and `npm run desktop:build`. On first launch, Banshee downloads the approximately 141 MiB speech model into the platform application-data directory and verifies its published SHA-256 before loading it. Enabling Prompt Enhancer on the Plugins page downloads an additional approximately 2.64 GiB NVIDIA Nemotron 3 Nano 4B cleanup model and starts the bundled `banshee-prompt-worker` sidecar. Its Settings dialog selects the coding model that will receive the enhanced prompt. After installation, transcription and plugin processing are offline.
+
+Linux and Windows builds include Vulkan acceleration for both Whisper and Prompt Enhancer. The Settings acceleration control supports `Auto` (prefer GPU and fall back to CPU), `CPU`, and `GPU` (require GPU and report initialization errors without silently falling back). History records the backend actually used for each transcription.
 
 ## Repository structure
 

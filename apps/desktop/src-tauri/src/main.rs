@@ -76,6 +76,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::app::app_get_dashboard,
             commands::settings::settings_get,
+            commands::settings::acceleration_status_get,
             commands::settings::settings_update,
             commands::settings::audio_list_input_devices,
             commands::dictionary::dictionary_entries_get,

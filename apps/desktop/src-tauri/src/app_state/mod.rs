@@ -18,8 +18,8 @@ use banshee_core::vad::SimpleVadProcessor;
 use banshee_core::{
     AppServices,
     domain::{
-        PluginRuntimeState, PluginRuntimeStatus, PluginStateStore, PluginSummary, RecordingSession,
-        RecordingSnapshot,
+        AccelerationPreference, AccelerationStatus, PluginRuntimeState, PluginRuntimeStatus,
+        PluginStateStore, PluginSummary, RecordingSession, RecordingSnapshot, SettingsStore,
     },
     pipeline::{PipelineServices, RecordingPipeline},
 };
@@ -63,13 +63,15 @@ pub struct ManagedAppState {
 impl ManagedAppState {
     pub fn initialize() -> anyhow::Result<Self> {
         let storage = initialize_storage()?;
+        let settings = storage.settings.load()?;
         let capabilities = PlatformCapabilityProbe::default().detect();
-        let whisper_engine = WhisperCppEngine::default();
+        let whisper_engine = WhisperCppEngine::new(settings.acceleration_preference);
         let speech_model_installer = ModelInstaller::new(&storage.paths.data_dir);
         let prompt_enhancer_installer =
             ModelInstaller::from_descriptor(&storage.paths.data_dir, PROMPT_ENHANCER_MODEL);
         let transcript_cleanup = TranscriptCleanup;
         let prompt_enhancer = PromptEnhancer::default();
+        prompt_enhancer.set_acceleration_preference(settings.acceleration_preference);
         let plugin_state: Arc<dyn PluginStateStore> = Arc::new(storage.plugins.clone());
         let plugins = Arc::new(PluginRegistry::new(
             plugin_state,
@@ -134,6 +136,20 @@ impl ManagedAppState {
             speech: self.speech_model_installer.status(),
             cleanup: self.prompt_enhancer_installer.status(),
         }
+    }
+
+    pub fn acceleration_status(&self) -> AccelerationStatus {
+        self.whisper_engine.acceleration_status()
+    }
+
+    pub fn set_acceleration_preference(
+        &self,
+        preference: AccelerationPreference,
+    ) -> anyhow::Result<()> {
+        self.whisper_engine
+            .set_acceleration_preference(preference)?;
+        self.prompt_enhancer.set_acceleration_preference(preference);
+        Ok(())
     }
 
     pub fn model_ready(&self) -> bool {

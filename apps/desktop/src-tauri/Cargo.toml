@@ -21,3 +21,4 @@ tauri-plugin-global-shortcut = "2"
 
 [features]
 default = []
+gpu-vulkan = ["banshee-core/gpu-vulkan"]

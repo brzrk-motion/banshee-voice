@@ -179,6 +179,7 @@ impl RecordingPipeline {
             duration_ms: vad_result.trimmed_audio.duration_ms,
             profile_id,
             acceleration_preference: settings.acceleration_preference,
+            acceleration_backend: transcription.acceleration_backend,
             session_type: self.services.capabilities.session_type,
         })
     }
@@ -332,6 +333,7 @@ mod tests {
             Ok(crate::domain::TranscriptionOutput {
                 raw_text: "um ship it period".to_string(),
                 backend: "whisper_cpp_preview:test".to_string(),
+                acceleration_backend: crate::domain::AccelerationBackend::Cpu,
                 latency_ms: 100,
             })
         }

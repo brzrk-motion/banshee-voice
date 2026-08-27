@@ -1,8 +1,8 @@
 use banshee_core::domain::{
-    AccelerationPreference, AppError, AppErrorCode, AudioInputDevice, AudioLevelChanged,
-    AudioRetentionPolicy, DashboardSnapshot, FallbackUsed, HudState, HudStateChanged, OutputMethod,
-    OutputResultKind, PipelineRunStatus, PluginRunRecord, RecordingOrigin, RecordingState,
-    RecordingStateChanged, SessionType, Settings, SettingsUpdate,
+    AccelerationBackend, AccelerationPreference, AccelerationStatus, AppError, AppErrorCode,
+    AudioInputDevice, AudioLevelChanged, AudioRetentionPolicy, DashboardSnapshot, FallbackUsed,
+    HudState, HudStateChanged, OutputMethod, OutputResultKind, PipelineRunStatus, PluginRunRecord,
+    RecordingOrigin, RecordingState, RecordingStateChanged, SessionType, Settings, SettingsUpdate,
 };
 use serde::{Deserialize, Serialize};
 
@@ -199,6 +199,8 @@ pub struct SettingsUpdateDto {
     pub paste_delay_ms: Option<i64>,
 }
 
+pub type AccelerationStatusDto = AccelerationStatus;
+
 impl From<SettingsUpdateDto> for SettingsUpdate {
     fn from(value: SettingsUpdateDto) -> Self {
         Self {
@@ -306,6 +308,7 @@ pub struct RecordingResultDto {
     pub final_text: String,
     pub stt_backend: String,
     pub cleanup_backend: String,
+    pub acceleration_actual: AccelerationBackend,
     pub stt_latency_ms: u64,
     pub cleanup_latency_ms: u64,
     pub cleanup_fallback_reason: Option<String>,

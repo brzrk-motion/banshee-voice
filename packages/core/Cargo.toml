@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = []
+gpu-vulkan = ["banshee-stt/gpu-vulkan"]
+
 [dependencies]
 anyhow.workspace = true
 banshee-audio = { path = "../../crates/audio" }

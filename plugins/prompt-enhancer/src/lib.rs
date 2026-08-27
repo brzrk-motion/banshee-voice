@@ -2,9 +2,9 @@
 
 use anyhow::{Context, Result, bail};
 use banshee_contracts::domain::{
-    PluginExecutionContext, PluginExecutionOutput, PluginManifest, PluginRuntimeState,
-    PluginRuntimeStatus, PluginSettingControl, PluginSettingDefinition, PluginSettingOption,
-    TextTransformPlugin,
+    AccelerationPreference, PluginExecutionContext, PluginExecutionOutput, PluginManifest,
+    PluginRuntimeState, PluginRuntimeStatus, PluginSettingControl, PluginSettingDefinition,
+    PluginSettingOption, TextTransformPlugin,
 };
 use banshee_models::{ModelCapability, ModelDescriptor};
 use serde::{Deserialize, Serialize};
@@ -39,6 +39,7 @@ const WORKER_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 struct WorkerPaths {
     executable: PathBuf,
     model: PathBuf,
+    acceleration: AccelerationPreference,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -98,6 +99,7 @@ pub struct PromptEnhancer {
     last_activity: Arc<Mutex<Option<std::time::Instant>>>,
     runtime: Arc<Mutex<PluginRuntimeStatus>>,
     enabled: Arc<AtomicBool>,
+    acceleration: Arc<Mutex<AccelerationPreference>>,
 }
 
 impl Default for PromptEnhancer {
@@ -114,6 +116,7 @@ impl Default for PromptEnhancer {
                 message: None,
             })),
             enabled: Arc::new(AtomicBool::new(false)),
+            acceleration: Arc::new(Mutex::new(AccelerationPreference::Auto)),
         }
     }
 }
@@ -131,19 +134,45 @@ impl PromptEnhancer {
         *self.runtime.lock().expect("plugin status mutex poisoned") = status;
     }
 
+    pub fn set_acceleration_preference(&self, preference: AccelerationPreference) {
+        let mut acceleration = self
+            .acceleration
+            .lock()
+            .expect("plugin acceleration mutex poisoned");
+        if *acceleration == preference {
+            return;
+        }
+        *acceleration = preference;
+        drop(acceleration);
+        if let Some(paths) = self
+            .worker_paths
+            .lock()
+            .expect("plugin worker paths mutex poisoned")
+            .as_mut()
+        {
+            paths.acceleration = preference;
+        }
+        self.stop_worker();
+    }
+
     pub fn start_worker(&self, executable: &Path, model: &Path) -> Result<()> {
         if !self.is_enabled() {
             bail!("prompt enhancer was disabled during setup");
         }
+        let acceleration = *self
+            .acceleration
+            .lock()
+            .expect("plugin acceleration mutex poisoned");
         *self
             .worker_paths
             .lock()
             .expect("plugin worker paths mutex poisoned") = Some(WorkerPaths {
             executable: executable.to_path_buf(),
             model: model.to_path_buf(),
+            acceleration,
         });
         self.stop_worker();
-        let mut child = spawn_worker(executable, model)?;
+        let mut child = spawn_worker(executable, model, acceleration)?;
         let stdin = child.stdin.take().context("worker stdin was unavailable")?;
         let stdout = child
             .stdout
@@ -246,6 +275,7 @@ impl PromptEnhancer {
             .expect("plugin worker paths mutex poisoned")
             .clone()
             .context("prompt enhancer worker is not configured")?;
+        self.set_acceleration_preference(paths.acceleration);
         self.start_worker(&paths.executable, &paths.model)
     }
 
@@ -535,15 +565,30 @@ fn terminate(child: &mut Child) {
     let _ = child.wait();
 }
 
-fn spawn_worker(executable: &Path, model: &Path) -> Result<Child> {
+fn spawn_worker(
+    executable: &Path,
+    model: &Path,
+    acceleration: AccelerationPreference,
+) -> Result<Child> {
+    let acceleration = acceleration_argument(acceleration);
     Command::new(executable)
         .arg("--model")
         .arg(model)
+        .arg("--acceleration")
+        .arg(acceleration)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
         .map_err(|error| prompt_worker_spawn_error(executable, error))
+}
+
+fn acceleration_argument(acceleration: AccelerationPreference) -> &'static str {
+    match acceleration {
+        AccelerationPreference::Auto => "auto",
+        AccelerationPreference::Cpu => "cpu",
+        AccelerationPreference::Gpu => "gpu",
+    }
 }
 
 fn prompt_worker_spawn_error(executable: &Path, error: std::io::Error) -> anyhow::Error {
@@ -608,6 +653,13 @@ mod tests {
         assert_eq!(json["protocolVersion"], 2);
         assert_eq!(json["requestId"], 42);
         assert_eq!(json["settings"][TARGET_MODEL_SETTING], "claude-opus-5");
+    }
+
+    #[test]
+    fn maps_each_acceleration_preference_to_worker_cli() {
+        assert_eq!(acceleration_argument(AccelerationPreference::Auto), "auto");
+        assert_eq!(acceleration_argument(AccelerationPreference::Cpu), "cpu");
+        assert_eq!(acceleration_argument(AccelerationPreference::Gpu), "gpu");
     }
 
     #[test]
@@ -678,7 +730,7 @@ mod tests {
         ));
         fs::write(
             &script,
-            "#!/bin/sh\necho '{\"type\":\"ready\",\"protocolVersion\":2}'\nIFS= read -r request\necho '{\"type\":\"transformed\",\"requestId\":1,\"text\":\"enhanced\",\"backend\":\"fake\"}'\n",
+            "#!/bin/sh\necho '{\"type\":\"ready\",\"protocolVersion\":2}'\nIFS= read -r request\necho '{\"type\":\"transformed\",\"requestId\":1,\"text\":\"## Task\\nImprove retries.\\n\\n## Requirements\\n- Retry transient failures.\\n\\n## Acceptance criteria\\n- Requests are retried.\",\"backend\":\"fake\"}'\n",
         )
         .unwrap();
         let mut permissions = fs::metadata(&script).unwrap().permissions();
@@ -698,8 +750,51 @@ mod tests {
                 &BTreeMap::from([(TARGET_MODEL_SETTING.into(), DEFAULT_TARGET_MODEL.into())]),
             )
             .unwrap();
-        assert_eq!(output.text, "enhanced");
+        assert!(output.text.contains("## Task"));
         assert_eq!(output.backend, "fake");
+
+        enhancer.unload();
+        fs::remove_file(script).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn acceleration_change_stops_worker_and_updates_restart_configuration() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        let script = std::env::temp_dir().join(format!(
+            "banshee-fake-prompt-worker-acceleration-{}",
+            std::process::id()
+        ));
+        fs::write(
+            &script,
+            "#!/bin/sh\necho '{\"type\":\"ready\",\"protocolVersion\":2}'\nIFS= read -r request\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&script, permissions).unwrap();
+
+        let enhancer = PromptEnhancer::default();
+        enhancer.enable();
+        enhancer
+            .start_worker(&script, Path::new("unused.gguf"))
+            .unwrap();
+        assert!(enhancer.worker.lock().unwrap().is_some());
+
+        enhancer.set_acceleration_preference(AccelerationPreference::Cpu);
+        assert!(enhancer.worker.lock().unwrap().is_none());
+        assert_eq!(
+            enhancer
+                .worker_paths
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .acceleration,
+            AccelerationPreference::Cpu
+        );
 
         enhancer.unload();
         fs::remove_file(script).unwrap();
@@ -727,7 +822,7 @@ mod tests {
             std::env::temp_dir().join(format!("banshee-fake-prompt-worker-{}", std::process::id()));
         fs::write(
             &script,
-            "#!/bin/sh\necho '{\"type\":\"ready\",\"protocolVersion\":2}'\nIFS= read -r request\necho '{\"type\":\"transformed\",\"requestId\":1,\"text\":\"enhanced\",\"backend\":\"fake\"}'\n",
+            "#!/bin/sh\necho '{\"type\":\"ready\",\"protocolVersion\":2}'\nIFS= read -r request\necho '{\"type\":\"transformed\",\"requestId\":1,\"text\":\"## Task\\nImprove retries.\\n\\n## Requirements\\n- Retry transient failures.\\n\\n## Acceptance criteria\\n- Requests are retried.\",\"backend\":\"fake\"}'\n",
         )
         .unwrap();
         let mut permissions = fs::metadata(&script).unwrap().permissions();
@@ -751,7 +846,7 @@ mod tests {
                 &BTreeMap::from([(TARGET_MODEL_SETTING.into(), DEFAULT_TARGET_MODEL.into())]),
             )
             .unwrap();
-        assert_eq!(output.text, "enhanced");
+        assert!(output.text.contains("## Task"));
         assert_eq!(output.backend, "fake");
 
         enhancer.unload();

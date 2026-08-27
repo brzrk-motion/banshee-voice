@@ -2,6 +2,11 @@ import { copyFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
+import {
+  assertVulkanPrerequisites,
+  requestedTarget,
+  usesVulkanTarget,
+} from "./gpu-build.mjs";
 
 function run(command, args, options) {
   const result = spawnSync(command, args, { ...options, stdio: "inherit" });
@@ -23,19 +28,15 @@ function rustHost(environment) {
   return host;
 }
 
-function requestedTarget(args) {
-  const index = args.indexOf("--target");
-  if (index >= 0) return args[index + 1];
-  return args.find((argument) => argument.startsWith("--target="))?.slice("--target=".length);
-}
-
 export function buildPromptWorker(repositoryRoot, environment, release, tauriArgs = []) {
   const target = requestedTarget(tauriArgs) ?? rustHost(environment);
   if (target === "universal-apple-darwin") {
     throw new Error("Universal macOS builds require a universal prompt worker binary");
   }
 
-  const cargoArgs = ["build", "-p", "banshee-prompt-enhancer", "--features", "worker", "--bin", "banshee-prompt-worker"];
+  assertVulkanPrerequisites(target, environment);
+  const features = usesVulkanTarget(target) ? "worker,gpu-vulkan" : "worker";
+  const cargoArgs = ["build", "-p", "banshee-prompt-enhancer", "--features", features, "--bin", "banshee-prompt-worker"];
   if (release) cargoArgs.push("--release");
   if (requestedTarget(tauriArgs)) cargoArgs.push("--target", target);
   run("cargo", cargoArgs, { cwd: repositoryRoot, env: environment });
